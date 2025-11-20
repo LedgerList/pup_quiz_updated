@@ -7,7 +7,7 @@ import { RadioGroup, RadioGroupItem } from '@/Components/ui/radio-group';
 import { Table, TableBody, TableCaption, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/Components/ui/table';
 import { ToggleGroup, ToggleGroupItem } from '@/Components/ui/toggle-group';
 import LeaderBoardIcon from '@/CustomComponents/LeaderBoardIcon';
-import LeaderboardModal from '@/CustomComponents/LeaderBoardModal';
+import LeaderboardModal from '@/CustomComponents/LeaderboardModal';
 import LoadingText from '@/CustomComponents/Loader';
 import { PageProps } from '@/types';
 import { soundManager } from '@/utils/soundEffects';
