@@ -5,7 +5,7 @@ import PrimaryButton from '@/Components/PrimaryButton';
 import TextInput from '@/Components/TextInput';
 import { Button } from '@/Components/ui/button';
 import Footer from '@/CustomComponents/Footer';
-import OTPModal from '@/CustomComponents/OtpModal';
+import OTPModal from '@/CustomComponents/OTPModal';
 import GuestLayout from '@/Layouts/GuestLayout';
 
 import { Head, Link, router, useForm } from '@inertiajs/react';
