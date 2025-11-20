@@ -10,6 +10,6 @@ class LoginLogs extends Model
     protected $table = "login_logs";
     protected $fillable = [
         'user_id',
-        'emaiil'
+        'email'
     ];
 }

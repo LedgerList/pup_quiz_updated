@@ -3,6 +3,7 @@ import { Head, usePage } from '@inertiajs/react';
 import React, { useState, useEffect, useMemo } from 'react';
 import { AlertCircle, CheckCircle, XCircle, Loader } from 'lucide-react';
 import Swal from 'sweetalert2';
+import AnimatedTimer from '@/CustomComponents/AnimatedTimer';
 
 interface Option {
     id: number;
@@ -75,20 +76,46 @@ export default function JoinQuizSession({ quiz }: JoinQuizSessionProps) {
 
             try {
                 // First, try to join the session if not already joined
-                await fetch(`/api/live-quizzes/${sessionId}/join-participant`, {
+                const joinResponse = await fetch(`/api/live-quizzes/${sessionId}/join-participant`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
+                        'Accept': 'application/json',
                         'X-CSRF-TOKEN': csrfToken,
+                        'X-Requested-With': 'XMLHttpRequest',
                     },
+                    credentials: 'include',
                     body: JSON.stringify({ user_id: currentUserId }),
                 });
 
-                // Then, fetch the live session state
-                const sessionResponse = await fetch(`/api/live-quizzes/${sessionId}/session`);
-                if (!sessionResponse.ok) {
-                    throw new Error(`Failed to fetch session: ${sessionResponse.statusText}`);
+                if (!joinResponse.ok && joinResponse.status !== 409) {
+                    // 409 means already joined, which is fine
+                    const joinError = await joinResponse.json().catch(() => ({ message: 'Failed to join session' }));
+                    throw new Error(joinError.message || `Failed to join session: ${joinResponse.statusText}`);
                 }
+
+                // Then, fetch the live session state
+                const sessionResponse = await fetch(`/api/live-quizzes/${sessionId}/session`, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': csrfToken,
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                    credentials: 'include',
+                });
+
+                if (!sessionResponse.ok) {
+                    if (sessionResponse.status === 404) {
+                        setError('Live session not found. Please wait for the host to start the quiz.');
+                        setLoading(false);
+                        return;
+                    }
+                    const errorData = await sessionResponse.json().catch(() => ({ message: sessionResponse.statusText }));
+                    throw new Error(errorData.message || `Failed to fetch session: ${sessionResponse.statusText}`);
+                }
+
                 const sessionData: LiveSessionData = await sessionResponse.json();
                 setLiveSession(sessionData);
 
@@ -225,36 +252,51 @@ export default function JoinQuizSession({ quiz }: JoinQuizSessionProps) {
             if (response.ok) {
                 setIsAnswerSubmitted(true);
                 setParticipantScore(result.score);
+                
+                // Show modal confirmation alert
                 Swal.fire({
-                    toast: true,
-                    position: 'top-end',
                     icon: result.is_correct ? 'success' : 'error',
-                    title: result.is_correct ? 'Correct Answer!' : 'Incorrect Answer.',
-                    showConfirmButton: false,
-                    timer: 2000,
-                    timerProgressBar: true,
+                    title: result.is_correct ? 'Answer Submitted Successfully!' : 'Answer Submitted',
+                    html: `
+                        <div class="text-left">
+                            <p class="mb-2">Your answer has been submitted successfully.</p>
+                            <p class="text-sm text-gray-600 mb-2">${result.is_correct ? '✓ Correct Answer!' : '✗ Incorrect Answer'}</p>
+                            <p class="text-sm text-gray-600">Your current score: <strong>${result.score}</strong> points</p>
+                        </div>
+                    `,
+                    confirmButtonColor: result.is_correct ? '#10b981' : '#f97316',
+                    confirmButtonText: 'OK',
+                    allowOutsideClick: false,
                 });
             } else {
                 Swal.fire({
-                    toast: true,
-                    position: 'top-end',
                     icon: 'error',
-                    title: result.message || 'Failed to submit answer.',
-                    showConfirmButton: false,
-                    timer: 3000,
-                    timerProgressBar: true,
+                    title: 'Submission Failed',
+                    html: `
+                        <div class="text-left">
+                            <p class="mb-2">${result.message || 'Failed to submit answer.'}</p>
+                            <p class="text-sm text-gray-600">Please try again or contact the organizer if the problem persists.</p>
+                        </div>
+                    `,
+                    confirmButtonColor: '#f97316',
+                    confirmButtonText: 'OK',
+                    allowOutsideClick: false,
                 });
             }
         } catch (e: any) {
             console.error("Error submitting answer:", e);
             Swal.fire({
-                toast: true,
-                position: 'top-end',
                 icon: 'error',
-                title: `Error: ${e.message}`,
-                showConfirmButton: false,
-                timer: 3000,
-                timerProgressBar: true,
+                title: 'Submission Error',
+                html: `
+                    <div class="text-left">
+                        <p class="mb-2">An error occurred while submitting your answer.</p>
+                        <p class="text-sm text-gray-600">${e.message || 'Please try again or contact the organizer if the problem persists.'}</p>
+                    </div>
+                `,
+                confirmButtonColor: '#f97316',
+                confirmButtonText: 'OK',
+                allowOutsideClick: false,
             });
         }
     };
@@ -373,9 +415,10 @@ export default function JoinQuizSession({ quiz }: JoinQuizSessionProps) {
                         {/* Display countdown timer if active and time_limit exists */}
                          {liveSession.status === 'active' && currentQuestion.time_limit !== undefined && (
                             <div className="text-right mb-4">
-                                <span className={`text-xl font-bold ${timeLeft !== null && timeLeft <= 5 ? 'text-red-500 animate-pulse' : 'text-blue-600'}`}>
-                                    Time Left: {timeLeft !== null ? timeLeft : currentQuestion.time_limit}s
-                                </span>
+                                <AnimatedTimer 
+                                    timeLeft={timeLeft} 
+                                    totalTime={currentQuestion.time_limit}
+                                />
                             </div>
                         )}
                         {isWaitingForHost && (
@@ -456,7 +499,7 @@ export default function JoinQuizSession({ quiz }: JoinQuizSessionProps) {
                                                         (areOptionsDisabled ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer')
                                                     }
                                                 >
-                                                    False
+                                                    True
                                                 </button>
                                                 <button
                                                     onClick={() => setSelectedAnswer('false')}

@@ -25,8 +25,13 @@ class AppServiceProvider extends ServiceProvider
         // Share user and role with Inertia globally
         Inertia::share([
             'auth' => fn () => [
-                'user' => Auth::user(),
-                'role' => session('role'), // Share the role stored in session
+                'user' => Auth::user() ? [
+                    'id' => Auth::user()->id,
+                    'name' => Auth::user()->name,
+                    'email' => Auth::user()->email,
+                    'role' => Auth::user()->role, // Get role directly from user model
+                ] : null,
+                'role' => Auth::user()?->role ?? session('role'), // Fallback to session if user not loaded
             ],
         ]);
 

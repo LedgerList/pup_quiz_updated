@@ -1,20 +1,62 @@
 import { usePage } from '@inertiajs/react'
-import React from 'react'
+import React, { useState, useEffect } from 'react'
 
 type Props = {}
 
 const EventReminder = (props: Props) => {
-    const { msg } = usePage().props
+    const { start_date, lobby_name } = usePage().props as any
+    const [timeLeft, setTimeLeft] = useState({
+        days: 0,
+        hours: 0,
+        minutes: 0,
+        seconds: 0
+    })
+    const [expired, setExpired] = useState(false)
+
+    useEffect(() => {
+        if (!start_date) return
+
+        const updateCountdown = () => {
+            const now = new Date().getTime()
+            const start = new Date(start_date).getTime()
+            const difference = start - now
+
+            if (difference <= 0) {
+                setExpired(true)
+                setTimeLeft({ days: 0, hours: 0, minutes: 0, seconds: 0 })
+                // Reload page to check if event has started
+                setTimeout(() => {
+                    window.location.reload()
+                }, 1000)
+                return
+            }
+
+            const days = Math.floor(difference / (1000 * 60 * 60 * 24))
+            const hours = Math.floor((difference % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60))
+            const minutes = Math.floor((difference % (1000 * 60 * 60)) / (1000 * 60))
+            const seconds = Math.floor((difference % (1000 * 60)) / 1000)
+
+            setTimeLeft({ days, hours, minutes, seconds })
+        }
+
+        // Update immediately
+        updateCountdown()
+
+        // Update every second
+        const interval = setInterval(updateCountdown, 1000)
+
+        return () => clearInterval(interval)
+    }, [start_date])
 
     return (
         <div
-            className="min-h-screen w-full bg-cover bg-center  flex items-start justify-center relative"
+            className="min-h-screen w-full bg-cover bg-center flex items-start justify-center relative"
             style={{
                 backgroundImage: "url('/images/bgonly.png')",
             }}
         >
 
-            <div className="bg-gradient-to-br w-1/2 mt-56  from-red-100 via-red-50 to-red-100 min-h-[400px] flex items-center justify-between p-8 rounded-3xl shadow-2xl relative overflow-hidden">
+            <div className="bg-gradient-to-br w-1/2 mt-56 from-red-100 via-red-50 to-red-100 min-h-[400px] flex items-center justify-between p-8 rounded-3xl shadow-2xl relative overflow-hidden">
                 {/* Background pattern */}
                 <div className="absolute inset-0 opacity-5">
                     <div className="absolute top-10 left-10 w-20 h-20 bg-orange-400 rounded-full"></div>
@@ -44,11 +86,46 @@ const EventReminder = (props: Props) => {
                         </div>
                     </div>
 
-                    {/* Message */}
-                    {msg && (
+                    {/* Lobby Name */}
+                    {lobby_name && (
+                        <div className="mb-4">
+                            <p className="text-amber-800 text-2xl font-bold bg-white/50 backdrop-blur-sm px-4 py-2 rounded-lg inline-block shadow-sm">
+                                {lobby_name}
+                            </p>
+                        </div>
+                    )}
+
+                    {/* Countdown Timer */}
+                    {!expired ? (
+                        <div className="mb-6">
+                            <p className="text-amber-700 text-lg font-medium mb-3">Event will start in:</p>
+                            <div className="flex gap-4">
+                                {/* Days */}
+                                <div className="bg-white/80 backdrop-blur-sm px-6 py-4 rounded-lg shadow-lg text-center min-w-[100px]">
+                                    <div className="text-4xl font-bold text-amber-900">{timeLeft.days}</div>
+                                    <div className="text-sm text-amber-700 font-medium mt-1">Days</div>
+                                </div>
+                                {/* Hours */}
+                                <div className="bg-white/80 backdrop-blur-sm px-6 py-4 rounded-lg shadow-lg text-center min-w-[100px]">
+                                    <div className="text-4xl font-bold text-amber-900">{timeLeft.hours}</div>
+                                    <div className="text-sm text-amber-700 font-medium mt-1">Hours</div>
+                                </div>
+                                {/* Minutes */}
+                                <div className="bg-white/80 backdrop-blur-sm px-6 py-4 rounded-lg shadow-lg text-center min-w-[100px]">
+                                    <div className="text-4xl font-bold text-amber-900">{timeLeft.minutes}</div>
+                                    <div className="text-sm text-amber-700 font-medium mt-1">Minutes</div>
+                                </div>
+                                {/* Seconds */}
+                                <div className="bg-white/80 backdrop-blur-sm px-6 py-4 rounded-lg shadow-lg text-center min-w-[100px]">
+                                    <div className="text-4xl font-bold text-amber-900">{timeLeft.seconds}</div>
+                                    <div className="text-sm text-amber-700 font-medium mt-1">Seconds</div>
+                                </div>
+                            </div>
+                        </div>
+                    ) : (
                         <div className="mb-6">
                             <p className="text-amber-800 text-xl font-medium bg-white/50 backdrop-blur-sm px-4 py-2 rounded-lg inline-block shadow-sm">
-                                {msg}
+                                Event is starting...
                             </p>
                         </div>
                     )}

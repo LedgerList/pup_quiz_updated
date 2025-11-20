@@ -11,10 +11,13 @@ use App\Models\LiveParticipant; // Import the LiveParticipant model
 use App\Models\QuizManagement;
 use App\Models\SubjectQuestion;
 use App\Models\Subjects;
+use App\Models\Lobby;
+use App\Models\LoobyManagement;
 use Exception;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Http;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
@@ -45,17 +48,33 @@ class QuizController extends Controller
 
     public function indexj()
     {
-        $joinedQuizzes = Auth::user()->quizAttempts()
-            ->with(['quiz.questions'])
-            ->orderBy('created_at', 'desc')
-            ->get()
-            ->map(function ($attempt) {
-                $quiz = $attempt->quiz;
-                $quiz->statusquiz = $attempt->status; // Add the status from QuizAttempt to the quiz object
-                return $quiz;
-            });
+        try {
+            $user = Auth::user();
+            
+            if (!$user) {
+                return response()->json([], 200);
+            }
 
-        return response()->json($joinedQuizzes);
+            $joinedQuizzes = $user->quizAttempts()
+                ->with(['quiz.questions'])
+                ->orderBy('created_at', 'desc')
+                ->get()
+                ->filter(function ($attempt) {
+                    return $attempt->quiz !== null; // Filter out attempts with null quiz
+                })
+                ->map(function ($attempt) {
+                    $quiz = $attempt->quiz;
+                    $quiz->statusquiz = $attempt->status; // Add the status from QuizAttempt to the quiz object
+                    return $quiz;
+                })
+                ->values(); // Re-index the array
+
+            return response()->json($joinedQuizzes);
+        } catch (\Exception $e) {
+            // Log the error but return empty array instead of error response
+            \Log::error('Error fetching joined quizzes: ' . $e->getMessage());
+            return response()->json([], 200);
+        }
     }
 
     /**
@@ -169,6 +188,16 @@ class QuizController extends Controller
                     $imagePath = $questionData['image'];
                 }
 
+                $optionsPayload = [];
+                if ($questionData['type'] === 'multiple-choice' && !empty($questionData['options'])) {
+                    $optionsPayload = array_map(function ($opt) {
+                        return [
+                            'text' => $opt['text'],
+                            'isCorrect' => $opt['isCorrect'] ?? false,
+                        ];
+                    }, $questionData['options']);
+                }
+
                 $questionAttributes = [
                     'type' => $questionData['type'],
                     'question_text' => $questionData['questionText'],
@@ -178,6 +207,7 @@ class QuizController extends Controller
                     'difficulty' => $questionData['difficulty'],
                     'true_false_answer' => $questionData['type'] === 'true-false' ? ($questionData['trueFalseAnswer'] ?? null) : null,
                     'short_answer' => $questionData['type'] === 'short-answer' ? ($questionData['shortAnswer'] ?? null) : null,
+                    'options' => json_encode($optionsPayload),
                 ];
 
                 $question = $quiz->questions()->updateOrCreate(
@@ -361,6 +391,7 @@ class QuizController extends Controller
                 [
                     'score' => 0,
                     'last_answer_time' => now(),
+                    'answers' => [], // Initialize answers as empty array
                 ]
             );
         });
@@ -388,6 +419,7 @@ class QuizController extends Controller
             'questions.*.options.*.isCorrect' => 'boolean',
             'questions.*.trueFalseAnswer' => 'nullable|boolean',
             'questions.*.shortAnswer' => 'nullable|string',
+            'subject_id' => 'nullable|integer|exists:subjects,id', // Optional subject_id
         ]);
 
         DB::transaction(function () use ($request) {
@@ -401,6 +433,13 @@ class QuizController extends Controller
                 'code' => $quizCode,
                 'status' => 'published', // New quizzes are typically drafts by default
             ]);
+
+            // Update subject quiz_title if subject_id is provided
+            if ($request->has('subject_id') && $request->subject_id) {
+                Subjects::where('id', $request->subject_id)->update([
+                    'quiz_title' => $request->title
+                ]);
+            }
 
             foreach ($request->questions as $questionData) {
                 $imagePath = null;
@@ -423,6 +462,16 @@ class QuizController extends Controller
                     }
                 }
 
+                $optionsPayload = [];
+                if ($questionData['type'] === 'multiple-choice' && !empty($questionData['options'])) {
+                    $optionsPayload = array_map(function ($opt) {
+                        return [
+                            'text' => $opt['text'],
+                            'isCorrect' => $opt['isCorrect'] ?? false,
+                        ];
+                    }, $questionData['options']);
+                }
+
                 $question = $quiz->questions()->create([
                     'type' => $questionData['type'],
                     'question_text' => $questionData['questionText'],
@@ -432,6 +481,7 @@ class QuizController extends Controller
                     'difficulty' => $questionData['difficulty'],
                     'true_false_answer' => $questionData['type'] === 'true-false' ? ($questionData['trueFalseAnswer'] ?? null) : null,
                     'short_answer' => $questionData['type'] === 'short-answer' ? ($questionData['shortAnswer'] ?? null) : null,
+                    'options' => json_encode($optionsPayload),
                 ]);
        
                 if ($questionData['type'] === 'multiple-choice' && !empty($questionData['options'])) {
@@ -442,11 +492,96 @@ class QuizController extends Controller
                         ]);
                     }
                 }
+
+                // Always create SubjectQuestion record and QuizManagement log for Quiz Logs tracking
+                // If subject_id is not provided, create/use a default subject for this user
+                $subjectIdToUse = $request->has('subject_id') && $request->subject_id 
+                    ? $request->subject_id 
+                    : null;
+                
+                // If no subject_id, find or create a default subject for this user
+                if (!$subjectIdToUse) {
+                    // First, find or create a default lobby for this user
+                    $defaultLobby = Lobby::where('user_id', Auth::id())
+                        ->where('name', 'General Questions Lobby')
+                        ->first();
+                    
+                    if (!$defaultLobby) {
+                        // Create a default lobby
+                        do {
+                            $lobbyCode = mt_rand(100000, 999999);
+                        } while (Lobby::where('lobby_code', $lobbyCode)->exists());
+                        
+                        $defaultLobby = Lobby::create([
+                            'name' => 'General Questions Lobby',
+                            'lobby_code' => (string)$lobbyCode,
+                            'start_date' => now(),
+                            'user_id' => Auth::id(),
+                        ]);
+                    }
+                    
+                    // Find or create a default subject in this lobby
+                    $defaultSubject = Subjects::where('lobby_id', $defaultLobby->id)
+                        ->where('subject_name', 'General Questions')
+                        ->first();
+                    
+                    if (!$defaultSubject) {
+                        $defaultSubject = Subjects::create([
+                            'subject_name' => 'General Questions',
+                            'quiz_title' => $request->title ?? 'General Quiz',
+                            'lobby_id' => $defaultLobby->id,
+                            'start_date' => now(),
+                        ]);
+                    }
+                    
+                    $subjectIdToUse = $defaultSubject->id;
+                }
+                
+                // Prepare options for SubjectQuestion (JSON format)
+                $optionsJson = null;
+                if ($questionData['type'] === 'multiple-choice' && !empty($questionData['options'])) {
+                    $optionsArray = array_map(function($opt) {
+                        return [
+                            'text' => $opt['text'],
+                            'isCorrect' => $opt['isCorrect'] ?? false
+                        ];
+                    }, $questionData['options']);
+                    $optionsJson = json_encode($optionsArray);
+                }
+
+                $subjectQuestion = SubjectQuestion::create([
+                    'question' => $questionData['questionText'],
+                    'difficulty' => $questionData['difficulty'],
+                    'answer' => '', // not used
+                    'type' => $questionData['type'],
+                    'timeLimit' => $questionData['timeLimit'] ?? null,
+                    'image' => $imagePath ? $imagePath : '',
+                    'options' => $optionsJson,
+                    'points' => $questionData['points'] ?? null,
+                    'subject_id' => $subjectIdToUse,
+                    'trueFalseAnswer' => $questionData['type'] === 'true-false' ? ($questionData['trueFalseAnswer'] ? 1 : 0) : null,
+                    'shortAnswer' => $questionData['type'] === 'short-answer' ? ($questionData['shortAnswer'] ?? null) : null,
+                ]);
+
+                // Create QuizManagement log for tracking
+                QuizManagement::create([
+                    'user_id' => Auth::id(),
+                    'quiz_id' => $subjectQuestion->id,
+                    'action' => 0 // 0 = Create
+                ]);
             }
         });
 
-        return redirect()->back()
-            ->with('success', 'Quiz created successfully!');
+        // Return Inertia response if it's an Inertia request
+        if (request()->header('X-Inertia')) {
+            return redirect()->back()->with('success', 'Quiz created successfully!');
+        }
+        
+        // Return JSON for non-Inertia requests (API calls)
+        return response()->json([
+            'success' => true,
+            'message' => 'Quiz created successfully',
+        ], 200);
     }
 
     private function getMimeTypeExtension($mimeType)
@@ -459,4 +594,5 @@ class QuizController extends Controller
         ];
         return $mimeMap[$mimeType] ?? null;
     }
+
 }

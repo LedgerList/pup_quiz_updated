@@ -61,19 +61,26 @@ export default function Authenticated({ header, children, }) {
                           }),
                         ],
                       })
-                    : _jsxs(_Fragment, {
+                    : (user?.role === 3 || user?.role === 1)
+                    ? _jsxs(_Fragment, {
+                        // Organizer and Teacher Menu
                         children: [
                           _jsx(ResponsiveNavLink, {
-                            href: "/dashboard",
+                            href: user?.role === 3 ? "/organizerLobby" : "/dashboard",
                             className: "text-red-600",
                             children: "Dashboard",
                           }),
                           _jsx(ResponsiveNavLink, {
-                            href: "/session-history",
+                            href: "/audit-trails",
                             className: "text-red-600",
-                           children: "Session History",
+                            children: "All Audit Trails",
                           }),
                           _jsx(ResponsiveNavLink, {
+                            href: "/session-history",
+                            className: "text-red-600",
+                            children: "Session History",
+                          }),
+                          user?.role === 3 && _jsx(ResponsiveNavLink, {
                             href: "/lobby-management",
                             className: "text-red-600",
                             children: "Lobby Management",
@@ -83,25 +90,45 @@ export default function Authenticated({ header, children, }) {
                             className: "text-red-600",
                             children: "Quiz Management",
                           }),
-                          // _jsx(ResponsiveNavLink, {
-                          //   href: "/participant-management",
-                          //   className: "text-red-600",
-                          //   children: "Participant Management",
-                          // }),
                           _jsx(ResponsiveNavLink, {
                             href: "/scoring",
                             className: "text-red-600",
-                            children: "Scoring/Results",
+                            children: "Scoring / Results",
                           }),
                           _jsx(ResponsiveNavLink, {
                             href: "/statistics",
                             className: "text-red-600",
                             children: "Question Statistics",
                           }),
-                            _jsx(ResponsiveNavLink, {
+                          user?.role === 3 && _jsx(ResponsiveNavLink, {
                             href: "/pre-registration",
                             className: "text-red-600",
-                            children: "Pre Registration Logs",
+                            children: "Pre-Registration Logs",
+                          }),
+                        ],
+                      })
+                    : _jsxs(_Fragment, {
+                        // Other roles
+                        children: [
+                          _jsx(ResponsiveNavLink, {
+                            href: "/dashboard",
+                            className: "text-red-600",
+                            children: "Dashboard",
+                          }),
+                          _jsx(ResponsiveNavLink, {
+                            href: "explore",
+                            className: "text-red-600",
+                            children: "Explore",
+                          }),
+                          _jsx(ResponsiveNavLink, {
+                            href: "mylibrary",
+                            className: "text-red-600",
+                            children: "Library",
+                          }),
+                          _jsx(ResponsiveNavLink, {
+                            href: "/templates",
+                            className: "text-red-600",
+                            children: "Templates",
                           }),
                         ],
                       }),
@@ -173,6 +200,7 @@ export default function Authenticated({ header, children, }) {
                           href: route("settings"),
                           children: "Settings",
                         }),
+                        user?.role !== 4 &&
                         _jsx(Dropdown.Link, {
                           href: route("logout"),
                           method: "post",

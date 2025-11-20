@@ -120,6 +120,7 @@ export default function Login({
                             autoComplete="username"
                             isFocused={true}
                             onChange={(e) => setData('email', e.target.value)}
+                            placeholder="name@example.com"
                         />
                     </div>
 
@@ -151,6 +152,7 @@ export default function Login({
                                 className="mt-1 block w-full border-0 border-b border-red-600 focus:border-red-500 focus:ring-0 bg-transparent px-0 text-gray-700 rounded-none hover:bg-slate-200 transition-colors pr-10"
                                 autoComplete="current-password"
                                 onChange={(e) => setData('password', e.target.value)}
+                            placeholder="Enter your password"
                             />
                             <button
                                 type="button"

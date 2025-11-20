@@ -9,7 +9,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class Option extends Model
 {
     use HasFactory;
-   protected $connection = 'sqlite';
     /**
      * The attributes that are mass assignable.
      *

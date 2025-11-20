@@ -9,14 +9,125 @@ import axios from 'axios';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import Swal from 'sweetalert2';
 import { Calendar } from '@/Components/ui/calendar';
+import { Clock } from 'lucide-react';
+
+// Countdown Timer Component
+const CountdownTimer = ({ startDate }: { startDate: string | Date }) => {
+    const [timeLeft, setTimeLeft] = useState({
+        days: 0,
+        hours: 0,
+        minutes: 0,
+        seconds: 0
+    });
+    const [expired, setExpired] = useState(false);
+
+    useEffect(() => {
+        if (!startDate) return;
+
+        const updateCountdown = () => {
+            const now = new Date().getTime();
+            // Parse the date - handle both string and Date object
+            const start = startDate instanceof Date ? startDate.getTime() : new Date(startDate).getTime();
+            const difference = start - now;
+
+            if (difference <= 0) {
+                setExpired(true);
+                setTimeLeft({ days: 0, hours: 0, minutes: 0, seconds: 0 });
+                return;
+            }
+
+            const days = Math.floor(difference / (1000 * 60 * 60 * 24));
+            const hours = Math.floor((difference % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+            const minutes = Math.floor((difference % (1000 * 60 * 60)) / (1000 * 60));
+            const seconds = Math.floor((difference % (1000 * 60)) / 1000);
+
+            setTimeLeft({ days, hours, minutes, seconds });
+        };
+
+        // Update immediately
+        updateCountdown();
+
+        // Update every second
+        const interval = setInterval(updateCountdown, 1000);
+
+        return () => clearInterval(interval);
+    }, [startDate]);
+
+    if (expired || !startDate) return null;
+
+    const now = new Date().getTime();
+    const start = startDate instanceof Date ? startDate.getTime() : new Date(startDate).getTime();
+    if (start <= now) return null;
+
+    return (
+        <div className="bg-gradient-to-r from-orange-50 to-red-50 rounded-lg p-3 border border-orange-200">
+            <div className="flex items-center gap-2 mb-2">
+                <Clock className="w-4 h-4 text-orange-600" />
+                <p className="text-xs font-semibold text-orange-700">Starts in:</p>
+            </div>
+            <div className="flex gap-2">
+                {timeLeft.days > 0 && (
+                    <div className="text-center">
+                        <div className="text-lg font-bold text-orange-700">{timeLeft.days}</div>
+                        <div className="text-xs text-orange-600">d</div>
+                    </div>
+                )}
+                <div className="text-center">
+                    <div className="text-lg font-bold text-orange-700">{String(timeLeft.hours).padStart(2, '0')}</div>
+                    <div className="text-xs text-orange-600">h</div>
+                </div>
+                <div className="text-center">
+                    <div className="text-lg font-bold text-orange-700">{String(timeLeft.minutes).padStart(2, '0')}</div>
+                    <div className="text-xs text-orange-600">m</div>
+                </div>
+                <div className="text-center">
+                    <div className="text-lg font-bold text-orange-700">{String(timeLeft.seconds).padStart(2, '0')}</div>
+                    <div className="text-xs text-orange-600">s</div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 type Props = {}
 
 const OrganizerLobby = (props: Props) => {
     const { lobby } = usePage().props;
-    const { data, setData, post, processing, errors, reset } = useForm({
+    const { data, setData, post, processing, errors, reset, transform } = useForm({
         name: '',
         code: '',
         date: new Date()
+    });
+    const [time, setTime] = useState<string>('12:00');
+    
+    const buildDateTimePayload = (baseDate: Date | string, timeValue: string) => {
+        const sourceDate = baseDate instanceof Date ? new Date(baseDate.getTime()) : new Date(baseDate);
+
+        if (Number.isNaN(sourceDate.getTime())) {
+            return '';
+        }
+
+        const [hours = '0', minutes = '0'] = timeValue?.split(':') ?? [];
+        const parsedHours = Number.parseInt(hours, 10);
+        const parsedMinutes = Number.parseInt(minutes, 10);
+
+        sourceDate.setHours(Number.isNaN(parsedHours) ? 0 : parsedHours);
+        sourceDate.setMinutes(Number.isNaN(parsedMinutes) ? 0 : parsedMinutes);
+        sourceDate.setSeconds(0, 0);
+
+        const pad = (value: number) => value.toString().padStart(2, '0');
+
+        return `${sourceDate.getFullYear()}-${pad(sourceDate.getMonth() + 1)}-${pad(sourceDate.getDate())} ${pad(sourceDate.getHours())}:${pad(sourceDate.getMinutes())}:${pad(sourceDate.getSeconds())}`;
+    };
+    
+    // Transform date and time before sending to backend
+    transform((data) => {
+        const formattedDate = buildDateTimePayload(data.date, time);
+        
+        return {
+            ...data,
+            date: formattedDate || buildDateTimePayload(new Date(), time),
+        };
     });
 
     const [editingLobby, setEditingLobby] = useState<any>(null);
@@ -34,7 +145,8 @@ const OrganizerLobby = (props: Props) => {
             onSuccess: () => {
                 setData('code', '')
                 setData('name', '')
-                setData('date', null)
+                setData('date', new Date())
+                setTime('12:00')
                 // Close dialog after successful submission
                 const dialogClose = document.querySelector('[data-dialog-close]') as HTMLButtonElement;
                 if (dialogClose) dialogClose.click();
@@ -50,7 +162,22 @@ const OrganizerLobby = (props: Props) => {
                     color: '#399918',
                     iconColor: '#399918 ',
                 });
-
+            },
+            onError: (errors) => {
+                // Error handling is already done by Inertia's error bag
+                // The errors.code will be displayed in the form
+                if (errors.code) {
+                    Swal.fire({
+                        toast: true,
+                        position: 'top-end',
+                        icon: 'error',
+                        title: 'Lobby Code Already Exists',
+                        text: errors.code,
+                        showConfirmButton: false,
+                        timer: 4000,
+                        timerProgressBar: true,
+                    });
+                }
             }
         });
     };
@@ -242,16 +369,28 @@ const OrganizerLobby = (props: Props) => {
                                                     />
                                                     {errors.code && <p className="text-red-500 text-sm mt-1">{errors.code}</p>}
                                                 </div>
-                                                <div>
-                                                    <Label className="text-sm font-medium text-red-700"> Select Start Date </Label>
-                                                    <Calendar
-                                                        mode="single"
-                                                        selected={data.date}
-                                                        onSelect={(e) => setData("date", new Date(e))}
-                                                        className="rounded-md border shadow-sm text-lg w-full"
-                                                        captionLayout="dropdown"
-                                                    />
-
+                                                <div className="space-y-4">
+                                                    <div>
+                                                        <Label className="text-sm font-medium text-red-700"> Select Start Date </Label>
+                                                        <Calendar
+                                                            mode="single"
+                                                            selected={data.date}
+                                                            onSelect={(e) => setData("date", new Date(e))}
+                                                            className="rounded-md border shadow-sm text-lg w-full"
+                                                            captionLayout="dropdown"
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-2">
+                                                        <Label htmlFor="time" className="text-sm font-medium text-red-700">Select Start Time</Label>
+                                                        <Input
+                                                            id="time"
+                                                            type="time"
+                                                            className="border-red-200 focus:border-red-500 focus:ring-red-500"
+                                                            value={time}
+                                                            onChange={e => setTime(e.target.value)}
+                                                            required
+                                                        />
+                                                    </div>
                                                 </div>
                                                 <DialogFooter className="mt-6">
                                                     <Button
@@ -396,19 +535,59 @@ const OrganizerLobby = (props: Props) => {
                                                     </div>
                                                 </div>
 
-                                                {/* Creation Date */}
+                                                {/* Scheduled Date */}
                                                 <div>
-                                                    <p className="text-sm text-gray-500 font-medium">Created</p>
+                                                    <p className="text-sm text-gray-500 font-medium">
+                                                        {al.start_date ? 'Scheduled' : 'Created'}
+                                                    </p>
                                                     <p className="text-sm font-semibold text-gray-700">
-                                                        {al.created_at ? new Date(al.created_at).toLocaleDateString('en-US', {
-                                                            year: 'numeric',
-                                                            month: 'short',
-                                                            day: 'numeric',
-                                                            hour: '2-digit',
-                                                            minute: '2-digit'
-                                                        }) : 'Just now'}
+                                                        {al.start_date ? (() => {
+                                                            // Parse the date string - backend sends in 'Y-m-d H:i:s' format
+                                                            // Treat it as local time (the time the user selected)
+                                                            const dateStr = al.start_date;
+                                                            let date: Date;
+                                                            
+                                                            if (dateStr instanceof Date) {
+                                                                date = dateStr;
+                                                            } else {
+                                                                // Parse the date string - if it's in 'Y-m-d H:i:s' format, 
+                                                                // JavaScript will parse it as local time
+                                                                date = new Date(dateStr.replace(' ', 'T'));
+                                                            }
+                                                            
+                                                            // Format the date in a readable format
+                                                            return date.toLocaleDateString('en-US', {
+                                                                year: 'numeric',
+                                                                month: 'short',
+                                                                day: 'numeric',
+                                                                hour: '2-digit',
+                                                                minute: '2-digit',
+                                                                hour12: true
+                                                            });
+                                                        })() : (al.created_at ? (() => {
+                                                            const date = al.created_at instanceof Date ? al.created_at : new Date(al.created_at);
+                                                            return date.toLocaleDateString('en-US', {
+                                                                year: 'numeric',
+                                                                month: 'short',
+                                                                day: 'numeric',
+                                                                hour: '2-digit',
+                                                                minute: '2-digit',
+                                                                hour12: true
+                                                            });
+                                                        })() : 'Just now')}
                                                     </p>
                                                 </div>
+
+                                                {/* Countdown Timer */}
+                                                {al.start_date && (() => {
+                                                    // Parse the date and check if it's in the future
+                                                    const dateStr = al.start_date;
+                                                    const startDate = dateStr instanceof Date ? dateStr : new Date(dateStr);
+                                                    const now = new Date();
+                                                    return startDate.getTime() > now.getTime();
+                                                })() && (
+                                                    <CountdownTimer startDate={al.start_date} />
+                                                )}
 
                                                 {/* Participants */}
                                                 {/* <div className="flex items-center justify-between pt-2 border-t border-gray-100">
@@ -499,16 +678,28 @@ const OrganizerLobby = (props: Props) => {
                                                         />
                                                         {errors.code && <p className="text-red-500 text-sm mt-1">{errors.code}</p>}
                                                     </div>
-                                                    <div>
-                                                        <Label className="text-sm font-medium text-red-700"> Select Start Date </Label>
-                                                        <Calendar
-                                                            mode="single"
-                                                            selected={data.date}
-                                                            onSelect={(e) => setData("date", e)}
-                                                            className="rounded-md border shadow-sm text-lg w-full"
-                                                            captionLayout="dropdown"
-                                                        />
-
+                                                    <div className="space-y-4">
+                                                        <div>
+                                                            <Label className="text-sm font-medium text-red-700"> Select Start Date </Label>
+                                                            <Calendar
+                                                                mode="single"
+                                                                selected={data.date}
+                                                                onSelect={(e) => setData("date", new Date(e))}
+                                                                className="rounded-md border shadow-sm text-lg w-full"
+                                                                captionLayout="dropdown"
+                                                            />
+                                                        </div>
+                                                        <div className="space-y-2">
+                                                            <Label htmlFor="time" className="text-sm font-medium text-red-700">Select Start Time</Label>
+                                                            <Input
+                                                                id="time"
+                                                                type="time"
+                                                                className="border-red-200 focus:border-red-500 focus:ring-red-500"
+                                                                value={time}
+                                                                onChange={e => setTime(e.target.value)}
+                                                                required
+                                                            />
+                                                        </div>
                                                     </div>
                                                     <DialogFooter className="mt-6">
                                                         <Button

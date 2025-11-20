@@ -8,7 +8,6 @@ use Illuminate\Database\Eloquent\Model;
 class QuizAttempt extends Model
 {
     use HasFactory;
-   protected $connection = 'sqlite';
     /**
      * The attributes that are mass assignable.
      *

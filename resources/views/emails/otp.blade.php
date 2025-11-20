@@ -249,7 +249,11 @@
         <div class="header">
             <div class="logo-section">
                 <div class="company-logo">
-                    <img src="{{ asset('images/school_logo.png') }}" alt="App Logo" style="width: 100%; height:100%;">
+                    @if(!empty($logoCid))
+                        <img src="{{ $logoCid }}" alt="App Logo" style="width: 100%; height:100%; object-fit: contain;">
+                    @else
+                        <img src="{{ asset('images/LOGO.png') }}" alt="App Logo" style="width: 100%; height:100%; object-fit: contain;">
+                    @endif
                 </div>
                 <h1>{{ $subject_line }}</h1>
                 <div class="header-subtitle">PUPT QUIZ</div>
@@ -269,9 +273,11 @@
                 <p>We sent this email to: {{ $email }}</p>
             </div>
 
+            @if(!empty($logoCid))
             <div class="school-logo-container">
-                <img src="{{ asset('images/school_logo.png') }}" alt="App Logo" style="width: 100%; height:100%;">
+                <img src="{{ $logoCid }}" alt="App Logo" style="width: 100%; height:100%;">
             </div>
+            @endif
         </div>
 
         <div class="footer">

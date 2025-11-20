@@ -1,15 +1,34 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { router, usePage } from '@inertiajs/react';
-import { Search, User, Clock, MapPin, Calendar, Filter, Save, FilePenLineIcon, Trash2Icon, LayoutDashboardIcon } from 'lucide-react';
+import { Search, User, Clock, MapPin, Calendar, Filter, Save, FilePenLineIcon, Trash2Icon, LayoutDashboardIcon, ChevronLeft, FileSpreadsheet } from 'lucide-react';
 import { PageProps } from '@/types';
+import axios from 'axios';
+import Swal from 'sweetalert2';
 type Props = {}
 
 const LobbyManagement = (props: Props) => {
-  const { logs } = usePage().props
+  const { logs, lobbies } = usePage().props
   const { auth } = usePage<PageProps>().props
   const [searchTerm, setSearchTerm] = useState('');
   const [filterActive, setFilterActive] = useState('all');
+  const [selectedLobby, setSelectedLobby] = useState<number | null>(null);
+  const [lobbySearchTerm, setLobbySearchTerm] = useState('');
+  const [availableLobbies, setAvailableLobbies] = useState<any[]>([]);
+  const [isGeneratingReport, setIsGeneratingReport] = useState(false);
+
+  useEffect(() => {
+    if (lobbies && lobbies.length > 0) {
+      setAvailableLobbies(lobbies);
+      if (!selectedLobby && lobbies[0]) {
+        setSelectedLobby(lobbies[0].id);
+      }
+    }
+  }, [lobbies]);
+
+  const filteredLobbies = availableLobbies.filter(lobby =>
+    lobby.name.toLowerCase().includes(lobbySearchTerm.toLowerCase())
+  );
 
   const sessionData = logs
   const formatDateTime = (timestamp) => {
@@ -53,8 +72,15 @@ const LobbyManagement = (props: Props) => {
   };
 
   const filteredData = sessionData.filter(session => {
-    const matchesSearch = session.lobby.name.toString().includes(searchTerm) ||
-      session.lobby.lobby_code.includes(searchTerm);
+    // Filter by selected lobby if one is selected
+    if (selectedLobby) {
+      if (session.lobby_id !== selectedLobby) {
+        return false;
+      }
+    }
+
+    const matchesSearch = session.lobby?.name?.toString().includes(searchTerm) ||
+      session.lobby?.lobby_code?.includes(searchTerm);
     if (filterActive === 'all') return matchesSearch;
     if (filterActive === 'created') return matchesSearch && session.action == 0;
     if (filterActive === 'edited') return matchesSearch && session.action == 1;
@@ -75,10 +101,72 @@ const LobbyManagement = (props: Props) => {
       hour12: false, // set to true if you want AM/PM
     });
   }
+
+  const handleGenerateReport = async () => {
+    setIsGeneratingReport(true);
+    try {
+      const lobbyIdParam = selectedLobby ? `/${selectedLobby}` : '';
+      const response = await axios.get(`/report/lobby-management${lobbyIdParam}`, {
+        responseType: 'blob',
+      });
+
+      if (response.status === 200) {
+        let filename = 'lobby_management_logs.xlsx';
+        const contentDisposition = response.headers['content-disposition'];
+        if (contentDisposition) {
+          const filenameMatch = contentDisposition.match(/filename="?([^"]+)"?/);
+          if (filenameMatch && filenameMatch[1]) {
+            filename = filenameMatch[1];
+          }
+        }
+
+        const url = window.URL.createObjectURL(new Blob([response.data]));
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', filename);
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(url);
+
+        Swal.fire({
+          toast: true,
+          position: 'top-end',
+          icon: 'success',
+          title: 'Report downloaded successfully!',
+          showConfirmButton: false,
+          timer: 3000,
+          timerProgressBar: true,
+        });
+      }
+    } catch (error: any) {
+      console.error('Error during report download:', error);
+      let errorMessage = 'An error occurred during download.';
+      
+      if (error.response) {
+        errorMessage = error.response.data?.message || `Server error: ${error.response.status}`;
+      } else if (error.request) {
+        errorMessage = 'No response from server. Please check your connection.';
+      } else {
+        errorMessage = error.message || 'An unexpected error occurred.';
+      }
+      
+      Swal.fire({
+        toast: true,
+        position: 'top-end',
+        icon: 'error',
+        title: errorMessage,
+        showConfirmButton: false,
+        timer: 4000,
+        timerProgressBar: true,
+      });
+    } finally {
+      setIsGeneratingReport(false);
+    }
+  };
   return (
     <AuthenticatedLayout>
       <div className="min-h-screen bg-gradient-to-br from-red-50 via-amber-50 to-yellow-50 p-6">
-
         <div className="max-w-7xl mx-auto">
           {/* Header */}
           <div className='flex justify-between items-center'>
@@ -89,72 +177,135 @@ const LobbyManagement = (props: Props) => {
               <p className="text-gray-600">Monitor and track lobby activity</p>
             </div>
 
-            <div onClick={() => router.get("/organizerLobby")} className='bg-red-500 text-white p-4 flex gap-x-3 rounded-md hover:bg-red-700 hover:cursor-pointer'>
-              <LayoutDashboardIcon />
-              <p>Go to Dashboard</p>
-            </div>
-
-          </div>
-
-          {/* Stats Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-            <div className="bg-white rounded-xl shadow-lg border-l-4 border-red-500 p-6 hover:shadow-xl transition-shadow duration-300">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Total Lobby</p>
-                  <p className="text-2xl font-bold text-gray-900">{sessionData.length}</p>
-                </div>
-                <div className="p-3 bg-red-100 rounded-full">
-                  <User className="w-6 h-6 text-red-600" />
-                </div>
-              </div>
-            </div>
-
-
-
-            <div className="bg-white rounded-xl shadow-lg border-l-4 border-green-500 p-6 hover:shadow-xl transition-shadow duration-300">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Created</p>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {sessionData.filter(s => s.action == 0).length}
-                  </p>
-                </div>
-                <div className="p-3 bg-green-100 rounded-full">
-                  <Save className="w-6 h-6 text-green-600" />
-                </div>
-              </div>
-            </div>
-            <div className="bg-white rounded-xl shadow-lg border-l-4 border-red-500 p-6 hover:shadow-xl transition-shadow duration-300">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Edited</p>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {sessionData.filter(s => s.action == 1).length}
-                  </p>
-                </div>
-                <div className="p-3 bg-yellow-100 rounded-full">
-                  <FilePenLineIcon className="w-6 h-6 text-yellow-600" />
-                </div>
-              </div>
-            </div>
-            <div className="bg-white rounded-xl shadow-lg border-l-4 border-red-500 p-6 hover:shadow-xl transition-shadow duration-300">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Deleted</p>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {sessionData.filter(s => s.action == 2).length}
-                  </p>
-                </div>
-                <div className="p-3 bg-red-100 rounded-full">
-                  <Trash2Icon className="w-6 h-6 text-red-600" />
-                </div>
-              </div>
+            <div className="flex gap-3">
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleGenerateReport();
+                }}
+                disabled={isGeneratingReport}
+                className='bg-orange-600 text-white p-4 flex gap-x-3 rounded-md hover:bg-orange-700 hover:cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition-colors'
+                type="button"
+              >
+                <FileSpreadsheet className="w-5 h-5" />
+                <p>{isGeneratingReport ? 'Generating...' : 'Generate Report'}</p>
+              </button>
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  router.get("/organizerLobby");
+                }}
+                className='bg-red-500 text-white p-4 flex gap-x-3 rounded-md hover:bg-red-700 hover:cursor-pointer'
+                type="button"
+              >
+                <LayoutDashboardIcon />
+                <p>Go to Dashboard</p>
+              </button>
             </div>
           </div>
 
-          {/* Controls */}
-          <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
+          <div className="flex gap-6">
+            {/* Left Sidebar - Quiz Event Filter */}
+            <div className="w-80 flex-shrink-0">
+              <div className="bg-white rounded-xl shadow-lg p-6">
+                <h2 className="text-xl font-bold text-red-600 mb-2">Quiz Event</h2>
+                <p className="text-sm text-gray-600 mb-4">Select a quiz event to filter logs</p>
+                
+                <div className="relative mb-4">
+                  <input
+                    type="text"
+                    placeholder="Search quiz event..."
+                    className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                    value={lobbySearchTerm}
+                    onChange={(e) => setLobbySearchTerm(e.target.value)}
+                  />
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                </div>
+
+                <div className="space-y-2 max-h-96 overflow-y-auto">
+                  {filteredLobbies.length === 0 ? (
+                    <p className="text-gray-500 text-sm text-center py-4">No quiz events found</p>
+                  ) : (
+                    filteredLobbies.map((lobby) => (
+                      <button
+                        key={lobby.id}
+                        onClick={() => setSelectedLobby(lobby.id)}
+                        className={`w-full text-left px-4 py-3 rounded-lg transition-colors ${
+                          selectedLobby === lobby.id
+                            ? 'bg-orange-500 text-white'
+                            : 'bg-gray-50 hover:bg-gray-100 text-gray-900'
+                        }`}
+                      >
+                        {lobby.name}
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Right Content - Logs Table */}
+            <div className="flex-1">
+
+              {/* Stats Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+                <div className="bg-white rounded-xl shadow-lg border-l-4 border-red-500 p-6 hover:shadow-xl transition-shadow duration-300">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-gray-600">Total Lobby</p>
+                      <p className="text-2xl font-bold text-gray-900">{filteredData.length}</p>
+                    </div>
+                    <div className="p-3 bg-red-100 rounded-full">
+                      <User className="w-6 h-6 text-red-600" />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-xl shadow-lg border-l-4 border-green-500 p-6 hover:shadow-xl transition-shadow duration-300">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-gray-600">Created</p>
+                      <p className="text-2xl font-bold text-gray-900">
+                        {filteredData.filter(s => s.action == 0).length}
+                      </p>
+                    </div>
+                    <div className="p-3 bg-green-100 rounded-full">
+                      <Save className="w-6 h-6 text-green-600" />
+                    </div>
+                  </div>
+                </div>
+                <div className="bg-white rounded-xl shadow-lg border-l-4 border-red-500 p-6 hover:shadow-xl transition-shadow duration-300">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-gray-600">Edited</p>
+                      <p className="text-2xl font-bold text-gray-900">
+                        {filteredData.filter(s => s.action == 1).length}
+                      </p>
+                    </div>
+                    <div className="p-3 bg-yellow-100 rounded-full">
+                      <FilePenLineIcon className="w-6 h-6 text-yellow-600" />
+                    </div>
+                  </div>
+                </div>
+                <div className="bg-white rounded-xl shadow-lg border-l-4 border-red-500 p-6 hover:shadow-xl transition-shadow duration-300">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-gray-600">Deleted</p>
+                      <p className="text-2xl font-bold text-gray-900">
+                        {filteredData.filter(s => s.action == 2).length}
+                      </p>
+                    </div>
+                    <div className="p-3 bg-red-100 rounded-full">
+                      <Trash2Icon className="w-6 h-6 text-red-600" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Controls */}
+              <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
             <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
               <div className="relative flex-1 max-w-md">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
@@ -183,8 +334,18 @@ const LobbyManagement = (props: Props) => {
             </div>
           </div>
 
-          {/* Session Table */}
-          <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+              {/* Session Table */}
+              <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+                <div className="p-4 border-b border-gray-200 flex items-center gap-2">
+                  <h3 className="text-lg font-semibold text-gray-900">
+                    Manage Lobby
+                  </h3>
+                  {selectedLobby && (
+                    <span className="text-sm text-gray-600">
+                      - {availableLobbies.find(l => l.id === selectedLobby)?.name || ''}
+                    </span>
+                  )}
+                </div>
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead className="bg-gradient-to-r from-red-500 to-amber-500">
@@ -254,11 +415,13 @@ const LobbyManagement = (props: Props) => {
             )}
           </div>
 
-          {/* Footer */}
-          <div className="mt-8 text-center">
-            <p className="text-gray-500 text-sm">
-              Showing {filteredData.length} of {sessionData.length} sessions
-            </p>
+              {/* Footer */}
+              <div className="mt-8 text-center">
+                <p className="text-gray-500 text-sm">
+                  Showing {filteredData.length} of {selectedLobby ? filteredData.length : sessionData.length} sessions
+                </p>
+              </div>
+            </div>
           </div>
         </div>
       </div>

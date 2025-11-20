@@ -302,18 +302,17 @@ const GetStarted = (props: Props) => {
                             //         </div>
                             //     );
                             // }
-                              if (currentStep === 0) {
+                            if (currentStep === 0) {
                                 return (
                                     <div
                                         key={option.id}
                                         onClick={() => {
-                                            if(option.id =="class") return
-                                               
                                             setSetupType(
                                                 option.id as "class" | "event"
                                             );
                                             setCurrentStep(1);
                                         }}
+                                        className="cursor-pointer hover:shadow-lg transition-shadow duration-300"
                                     >
                                         {content}
                                     </div>

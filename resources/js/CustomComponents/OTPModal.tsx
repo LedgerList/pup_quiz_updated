@@ -14,12 +14,12 @@ const Dialog = ({ open, onOpenChange, children }) => {
     if (!open) return null;
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
             <div
-                className="fixed inset-0 bg-gradient-to-br from-orange-500/20 via-purple-500/10 to-pink-500/20 backdrop-blur-md"
+                className="fixed inset-0 bg-white backdrop-blur-md"
                 onClick={() => onOpenChange(false)}
             />
-            <div className="relative z-50 animate-in fade-in-0 zoom-in-95 duration-300">
+            <div className="relative z-[10000] animate-in fade-in-0 zoom-in-95 duration-300">
                 {children}
             </div>
         </div>
@@ -124,20 +124,42 @@ export default function OTPModal(props: Props) {
             console.log(response.data)
 
             if (response.data.success) {
-                localStorage.removeItem("email")
-                router.get('/dashboard')
+                localStorage.removeItem("email");
+                setIsSuccess(true);
 
-            }
-
-        } catch (e) {
-            if (e.response.data.error) {
-                // Show subtle notification instead of alert
                 const notification = document.createElement('div');
-                notification.className = 'fixed top-4 right-4 bg-red-500 text-white px-4 py-2 rounded-lg shadow-lg z-50';
-                notification.textContent = e.response.data.error;
+                notification.className = 'fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg z-50';
+                notification.textContent = response.data.success;
                 document.body.appendChild(notification);
                 setTimeout(() => notification.remove(), 3000);
+                
+                // Redirect to dashboard after 2 seconds
+                setTimeout(() => {
+                    router.visit('/dashboard');
+                }, 2000);
             }
+
+        } catch (e: any) {
+            let errorMessage = 'Verification failed. Please try again.';
+            
+            if (e.response?.data?.error) {
+                errorMessage = e.response.data.error;
+            } else if (e.response?.data?.message) {
+                errorMessage = e.response.data.message;
+            } else if (e.message) {
+                errorMessage = e.message;
+            } else if (!e.response) {
+                errorMessage = 'Unable to connect to server. Please check your connection.';
+            }
+            
+            setError(errorMessage);
+            
+            // Show subtle notification instead of alert
+            const notification = document.createElement('div');
+            notification.className = 'fixed top-4 right-4 bg-red-500 text-white px-4 py-2 rounded-lg shadow-lg z-50';
+            notification.textContent = errorMessage;
+            document.body.appendChild(notification);
+            setTimeout(() => notification.remove(), 3000);
         } finally {
             setIsLoading(false);
         }
@@ -167,15 +189,27 @@ export default function OTPModal(props: Props) {
 
             }
 
-        } catch (e) {
-            if (e.response.data.error) {
-                // Show subtle notification instead of alert
-                const notification = document.createElement('div');
-                notification.className = 'fixed top-4 right-4 bg-red-500 text-white px-4 py-2 rounded-lg shadow-lg z-50';
-                notification.textContent = e.response.data.error;
-                document.body.appendChild(notification);
-                setTimeout(() => notification.remove(), 3000);
+        } catch (e: any) {
+            let errorMessage = 'Failed to resend OTP. Please try again.';
+            
+            if (e.response?.data?.error) {
+                errorMessage = e.response.data.error;
+            } else if (e.response?.data?.message) {
+                errorMessage = e.response.data.message;
+            } else if (e.message) {
+                errorMessage = e.message;
+            } else if (!e.response) {
+                errorMessage = 'Unable to connect to server. Please check your connection.';
             }
+            
+            setError(errorMessage);
+            
+            // Show subtle notification instead of alert
+            const notification = document.createElement('div');
+            notification.className = 'fixed top-4 right-4 bg-red-500 text-white px-4 py-2 rounded-lg shadow-lg z-50';
+            notification.textContent = errorMessage;
+            document.body.appendChild(notification);
+            setTimeout(() => notification.remove(), 3000);
         } finally {
             // Countdown timer
             const interval = setInterval(() => {
@@ -300,17 +334,30 @@ export default function OTPModal(props: Props) {
                             </div>
                         </>
                     ) : (
-                        <div className="text-center py-8">
-                            <div className="w-20 h-20 bg-gradient-to-br from-green-500 to-green-600 rounded-full flex items-center justify-center mx-auto mb-6 animate-in zoom-in-50 duration-500">
+                        <div className="text-center py-8 space-y-6">
+                            <div className="w-20 h-20 bg-gradient-to-br from-green-500 to-green-600 rounded-full flex items-center justify-center mx-auto animate-in zoom-in-50 duration-500">
                                 <CheckCircle className="w-10 h-10 text-white" />
                             </div>
-                            <DialogTitle >
-                                <p className="text-green-600 mb-2">
-                                    Verification Successful!
+                            <div>
+                                <DialogTitle>
+                                    <p className="text-green-600 mb-2">
+                                        Verification Successful!
+                                    </p>
+                                </DialogTitle>
+                                <p className="text-gray-600">
+                                    Your email has been verified. Redirecting to dashboard...
                                 </p>
-
-                            </DialogTitle>
-                            <p className="text-gray-600">Your phone number has been verified successfully.</p>
+                            </div>
+                            <Button
+                                className="w-full h-12 text-base font-semibold"
+                                onClick={() => {
+                                    setIsOpen(false);
+                                    router.visit('/dashboard');
+                                }}
+                            >
+                                <span>Go to Dashboard</span>
+                                <ArrowRight className="w-5 h-5 ml-2" />
+                            </Button>
                         </div>
                     )}
                 </DialogContent>

@@ -17,6 +17,13 @@ const Form = (props: Props) => {
         password: "",
     });
 
+    interface FormField {
+        name: keyof typeof formData;
+        label: string;
+        type: string;
+        placeholder?: string;
+    }
+
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setFormData({ ...formData, [e.target.name]: e.target.value });
     };
@@ -53,10 +60,10 @@ const Form = (props: Props) => {
         }
     };
 
-    const steps = [
+    const steps: { fields: FormField[] }[] = [
         {
             fields: [
-                { name: "fullName", label: "Full Name", type: "text" },
+                { name: "fullName", label: "Full Name", type: "text", placeholder: "Last Name, First Name MI" },
                 { name: "studentNumber", label: "Student Number", type: "text" },
                 { name: "program", label: "Program", type: "text" },
                 { name: "section", label: "Section", type: "text" },
@@ -101,7 +108,7 @@ const Form = (props: Props) => {
                                     value={formData[field.name as keyof typeof formData]}
                                     onChange={handleChange}
                                     className="w-full border-0 border-b border-red-500 pb-2 text-lg focus:ring-0 focus:outline-none focus:border-b-2 bg-transparent"
-                                    placeholder=" "
+                                    placeholder={field.placeholder ?? ""}
                                 />
                             </div>
                         ))}

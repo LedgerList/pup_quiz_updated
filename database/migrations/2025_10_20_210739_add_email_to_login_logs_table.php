@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::table('login_logs', function (Blueprint $table) {
             //
-            $table->string('emaiil')->nullable();
+            $table->string('email')->nullable();
         });
     }
 

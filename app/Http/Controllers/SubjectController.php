@@ -53,10 +53,20 @@ class SubjectController extends Controller
         //     // 'user_id' => Auth::user()->id
         // ]);
 
-        $date = $request->input('date'); // e.g. "9/30/2025"
+        $date = $request->input('date'); // e.g. "2025-11-19 21:40:00" or empty string for first subject
 
         // Convert to proper format for MySQL
-        $startDate = Carbon::parse($date)->format('Y-m-d H:i:s');
+        // If date is empty (first subject creation), use current date/time
+        // Parse the date string and ensure it's treated as local time (Asia/Manila timezone)
+        if (!empty($date)) {
+            // The date string is in 'Y-m-d H:i:s' format from frontend
+            // Parse it and set timezone to Asia/Manila to preserve the intended time
+            $startDate = Carbon::parse($date, config('app.timezone'))
+                ->setTimezone(config('app.timezone'))
+                ->format('Y-m-d H:i:s');
+        } else {
+            $startDate = now(config('app.timezone'))->format('Y-m-d H:i:s');
+        }
         try {
             Subjects::create([
                 'subject_name' => $request->input('name'),

@@ -66,98 +66,49 @@ const JoinPage = (props: Props) => {
             return;
         }
 
-        if (!csrfToken) {
+        try {
+            const { data } = await axios.post('/quizzes/join', { code: joinCode });
+
             Swal.fire({
                 toast: true,
                 position: 'top-end',
-                icon: 'error',
-                title: 'CSRF token is missing. Please refresh the page.',
+                icon: 'success',
+                title: data.message || 'Successfully joined the quiz!',
                 showConfirmButton: false,
                 timer: 3000,
                 timerProgressBar: true,
             });
-            console.error("Attempted to send request without CSRF token.");
-            setIsJoining(false);
-            return;
-        }
+            setJoinCode(''); // Clear the input field
+            setShowLoginPrompt(false); // Hide the prompt on success
 
-        try {
-            const response = await fetch('/quizzes/join', { // Use actual endpoint
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': csrfToken,
-                    'Accept': 'application/json',
-                },
-                body: JSON.stringify({ code: joinCode }),
-            });
-
-            // If Laravel's auth middleware redirects due to unauthenticated user (often due to CSRF token mismatch for logged-out users)
-            if (response.redirected) {
-                setShowLoginPrompt(true); // Show the login prompt
-                Swal.fire({
-                    toast: true,
-                    position: 'top-end',
-                    icon: 'warning',
-                    title: 'Your session has expired. Please log in to join the quiz.',
-                    showConfirmButton: false,
-                    timer: 3000,
-                    timerProgressBar: true,
-                }).then(() => {
-                    window.location.href = response.url; // Redirect to /login
-                });
-                return;
+            if (data.quiz_id) {
+                window.location.href = `/quizzes/${data.quiz_id}/starting`;
+            } else {
+                console.warn("Joined quiz, but no quiz_id for redirection.");
             }
-
-            const result = await response.json();
-
-            if (response.ok) { // Check for 2xx status codes
-                Swal.fire({
-                    toast: true,
-                    position: 'top-end',
-                    icon: 'success',
-                    title: result.message || 'Successfully joined the quiz!',
-                    showConfirmButton: false,
-                    timer: 3000,
-                    timerProgressBar: true,
-                });
-                setJoinCode(''); // Clear the input field
-                setShowLoginPrompt(false); // Hide the prompt on success
-
-                if (result.quiz_id) {
-                    window.location.href = `/quizzes/${result.quiz_id}/starting`;
-                } else {
-                    console.warn("Joined quiz, but no quiz_id for redirection.");
-                }
-            } else { // Handle non-2xx status codes
-                let errorMessage = result.message || 'Quiz not found or failed to join.';
-                if (response.status === 422 && result.errors) {
-                    const validationErrors = Object.values(result.errors).flat();
-                    errorMessage = validationErrors.join(' ') || errorMessage;
-                } else if (response.status === 403) {
-                    errorMessage = 'You do not have permission to join this quiz.';
-                } else if (response.status === 419) { // CSRF Token Mismatch/Session Expired
-                    errorMessage = 'Your session has expired. Please log in to join the quiz.';
-                    setShowLoginPrompt(true); // Show the login prompt for 419 as well
-                }
-
-                Swal.fire({
-                    toast: true,
-                    position: 'top-end',
-                    icon: 'error',
-                    title: errorMessage,
-                    showConfirmButton: false,
-                    timer: 3000,
-                    timerProgressBar: true,
-                });
-            }
-        } catch (error) {
+        } catch (error: any) {
             console.error("Error joining quiz:", error);
+            const status = error?.response?.status;
+
+            if (status === 401 || status === 419) {
+                setShowLoginPrompt(true);
+            }
+
+            let errorMessage = error?.response?.data?.message || 'Quiz not found or failed to join.';
+            if (status === 422 && error.response?.data?.errors) {
+                const validationErrors = Object.values(error.response.data.errors).flat();
+                errorMessage = validationErrors.join(' ') || errorMessage;
+            } else if (status === 403) {
+                errorMessage = 'You do not have permission to join this quiz.';
+            } else if (status === 419) {
+                errorMessage = 'Your session has expired. Please log in to join the quiz.';
+            }
+
             Swal.fire({
                 toast: true,
                 position: 'top-end',
                 icon: 'error',
-                title: 'An error occurred while trying to join the quiz.',
+                title: errorMessage,
                 showConfirmButton: false,
                 timer: 3000,
                 timerProgressBar: true,

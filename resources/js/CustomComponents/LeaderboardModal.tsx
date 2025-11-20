@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { X, CheckCheck, Trophy } from 'lucide-react';
+import AnimatedLeaderboard from './AnimatedLeaderboard';
 
 const CustomModal = ({ isOpen, onClose, children }) => {
   if (!isOpen) return null;

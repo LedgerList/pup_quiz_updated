@@ -3,6 +3,7 @@ import { Head, router, usePage } from '@inertiajs/react';
 import React, { useState, useEffect, useMemo, useCallback } from 'react'; // Added useCallback
 import { AlertCircle, PlayCircle, FastForward, CheckCircle, Award, User, XCircle, Loader, Download, Printer } from 'lucide-react';
 import Swal from 'sweetalert2';
+import AnimatedTimer from '@/CustomComponents/AnimatedTimer';
 
 interface Option {
     id: number;
@@ -64,10 +65,28 @@ export default function LiveQuizSession({ quiz }: LiveQuizSessionProps) {
 
     useEffect(() => {
         const fetchSessionData = async () => {
-            if (!currentUserId) return;
+            if (!currentUserId) {
+                setError('Please log in to view the live quiz session.');
+                setLoading(false);
+                return;
+            }
 
             try {
-                const sessionResponse = await fetch(`/api/live-quizzes/${sessionId}/session`);
+                // Get CSRF token
+                const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+                
+                // Fetch session with proper headers
+                const sessionResponse = await fetch(`/api/live-quizzes/${sessionId}/session`, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': csrfToken,
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                    credentials: 'include', // Include cookies for session auth
+                });
+
                 if (!sessionResponse.ok) {
                     if (sessionResponse.status === 404 && currentUserId) {
                         // Attempt to create session if not found (assuming current user is host)
@@ -82,43 +101,76 @@ export default function LiveQuizSession({ quiz }: LiveQuizSessionProps) {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/json',
-                                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')!.getAttribute('content')!,
+                                'Accept': 'application/json',
+                                'X-CSRF-TOKEN': csrfToken,
+                                'X-Requested-With': 'XMLHttpRequest',
                             },
+                            credentials: 'include',
                             body: JSON.stringify(initialSession),
                         });
                         if (createSessionResponse.ok) {
                             const newSession = await createSessionResponse.json();
                             setLiveSession(newSession);
                         } else {
-                            throw new Error(`Failed to create session: ${createSessionResponse.statusText}`);
+                            const errorData = await createSessionResponse.json().catch(() => ({}));
+                            throw new Error(errorData.message || `Failed to create session: ${createSessionResponse.statusText}`);
                         }
+                    } else if (sessionResponse.status === 401 || sessionResponse.status === 403) {
+                        throw new Error('You are not authorized to view this session.');
                     } else {
-                        throw new Error(`Failed to fetch session: ${sessionResponse.statusText}`);
+                        const errorData = await sessionResponse.json().catch(() => ({}));
+                        throw new Error(errorData.message || `Failed to fetch session: ${sessionResponse.statusText}`);
                     }
                 } else {
                     const sessionData = await sessionResponse.json();
                     setLiveSession(sessionData);
                 }
 
-                const participantsResponse = await fetch(`/api/live-quizzes/${sessionId}/participants`);
-                if (!participantsResponse.ok) {
-                    throw new Error(`Failed to fetch participants: ${participantsResponse.statusText}`);
-                }
-                const participantsData: ParticipantData[] = await participantsResponse.json();
-                participantsData.sort((a, b) => {
-                    // Sort by score (descending), then by last answer time (ascending) for ties
-                    if (b.score !== a.score) {
-                        return b.score - a.score;
-                    }
-                    const dateA = a.last_answer_time ? new Date(a.last_answer_time).getTime() : 0;
-                    const dateB = b.last_answer_time ? new Date(b.last_answer_time).getTime() : 0;
-                    return dateA - dateB;
+                // Fetch participants with proper headers
+                const participantsResponse = await fetch(`/api/live-quizzes/${sessionId}/participants`, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': csrfToken,
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                    credentials: 'include',
                 });
-                setParticipants(participantsData);
+                
+                if (!participantsResponse.ok) {
+                    // Don't throw error for participants, just set empty array
+                    if (participantsResponse.status === 404) {
+                        setParticipants([]);
+                    } else {
+                        console.warn('Failed to fetch participants:', participantsResponse.statusText);
+                        setParticipants([]);
+                    }
+                } else {
+                    const participantsData: ParticipantData[] = await participantsResponse.json();
+                    participantsData.sort((a, b) => {
+                        // Sort by score (descending), then by last answer time (ascending) for ties
+                        if (b.score !== a.score) {
+                            return b.score - a.score;
+                        }
+                        const dateA = a.last_answer_time ? new Date(a.last_answer_time).getTime() : 0;
+                        const dateB = b.last_answer_time ? new Date(b.last_answer_time).getTime() : 0;
+                        return dateA - dateB;
+                    });
+                    setParticipants(Array.isArray(participantsData) ? participantsData : []);
+                }
 
             } catch (err: any) {
                 console.error("Error fetching live session data or participants:", err);
-                setError(`Failed to load data: ${err.message || 'Unknown error'}`);
+                
+                // Handle network errors specifically
+                if (err.message?.includes('Failed to fetch') || err.message?.includes('ERR_CONNECTION_REFUSED') || err.message?.includes('NetworkError')) {
+                    setError('Unable to connect to the server. Please check your internet connection and try again.');
+                } else if (err.message) {
+                    setError(`Failed to load data: ${err.message}`);
+                } else {
+                    setError('Failed to load data. Please try again.');
+                }
             } finally {
                 setLoading(false);
             }
@@ -318,8 +370,22 @@ export default function LiveQuizSession({ quiz }: LiveQuizSessionProps) {
         return (
             <AuthenticatedLayout>
                 <Head title="Live Quiz Session" />
-                <div className="py-12 text-center text-red-600">
-                    <AlertCircle className="inline-block mr-2" /> {error}
+                <div className="py-12 px-4">
+                    <div className="max-w-2xl mx-auto bg-red-50 border border-red-200 rounded-lg p-6 text-center">
+                        <AlertCircle className="inline-block mr-2 text-red-600 mb-4" size={48} />
+                        <h2 className="text-xl font-semibold text-red-800 mb-2">Failed to Load Live Quiz Session</h2>
+                        <p className="text-red-600 mb-4">{error}</p>
+                        <button
+                            onClick={() => {
+                                setError(null);
+                                setLoading(true);
+                                window.location.reload();
+                            }}
+                            className="bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-6 rounded-lg transition-colors"
+                        >
+                            Retry
+                        </button>
+                    </div>
                 </div>
             </AuthenticatedLayout>
         );
@@ -423,9 +489,12 @@ export default function LiveQuizSession({ quiz }: LiveQuizSessionProps) {
                                 </p>
                                 {/* Display Time Limit and Countdown Timer */}
                                 {currentQuestion.time_limit !== undefined && (
-                                    <p className="text-md text-gray-600 mb-2">
-                                        Time Remaining: <span className="font-bold text-blue-600">{timeLeft !== null ? timeLeft : currentQuestion.time_limit} seconds</span>
-                                    </p>
+                                    <div className="mb-4">
+                                        <AnimatedTimer 
+                                            timeLeft={timeLeft} 
+                                            totalTime={currentQuestion.time_limit}
+                                        />
+                                    </div>
                                 )}
                                 <p className="text-xl mb-4 font-semibold">{currentQuestion.question_text}</p>
 
@@ -438,14 +507,28 @@ export default function LiveQuizSession({ quiz }: LiveQuizSessionProps) {
                                 )}
 
                                 {currentQuestion.type === 'multiple-choice' && (
-                                    <div className="space-y-3">
-                                        {currentQuestion.options?.map((option) => (
-                                            <div key={option.id} className={`p-3 rounded-md border flex items-center ${
-                                                answerRevealed && option.is_correct ? 'bg-green-100 border-green-500' : 'bg-gray-50 border-gray-200'
-                                            }`}>
-                                                <span className="text-lg font-medium text-gray-800">{option.option_text}</span>
-                                            </div>
-                                        ))}
+                                    <div className="space-y-3 mt-4">
+                                        <h4 className="text-lg font-semibold text-gray-700 mb-3">Choices:</h4>
+                                        {currentQuestion.options && currentQuestion.options.length > 0 ? (
+                                            currentQuestion.options.map((option) => (
+                                                <div key={option.id} className={`p-4 rounded-md border-2 flex items-center transition-all ${
+                                                    answerRevealed && option.is_correct 
+                                                        ? 'bg-green-100 border-green-500 shadow-md' 
+                                                        : 'bg-gray-50 border-gray-300 hover:bg-gray-100'
+                                                }`}>
+                                                    <span className={`text-lg font-medium ${
+                                                        answerRevealed && option.is_correct ? 'text-green-800' : 'text-gray-800'
+                                                    }`}>
+                                                        {option.option_text}
+                                                    </span>
+                                                    {answerRevealed && option.is_correct && (
+                                                        <CheckCircle className="ml-auto h-5 w-5 text-green-600" />
+                                                    )}
+                                                </div>
+                                            ))
+                                        ) : (
+                                            <p className="text-gray-500 italic">No options available for this question.</p>
+                                        )}
                                     </div>
                                 )}
 

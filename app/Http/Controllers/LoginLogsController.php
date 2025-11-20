@@ -9,7 +9,7 @@ class LoginLogsController extends Controller
 {
     public function isFirstLogin(Request $request)
     {
-        $user = LoginLogs::where('emaiil', $request->input('email'))->first();
+        $user = LoginLogs::where('email', $request->input('email'))->first();
 
 
         if ($user) {

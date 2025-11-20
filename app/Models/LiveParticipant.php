@@ -9,7 +9,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class LiveParticipant extends Model
 {
     use HasFactory;
-       protected $connection = 'sqlite';
 
     protected $fillable = [
         'live_session_id',

@@ -4,6 +4,7 @@ import { useState, useEffect, ChangeEvent } from 'react';
 import { PlusCircle, FileText, Clock, Star, Code, PlayCircle } from 'lucide-react'; // Import PlayCircle icon
 import Swal from 'sweetalert2'; // Import Swal for toasts
 import 'sweetalert2/dist/sweetalert2.min.css';
+import axios from 'axios';
 
 // Define interfaces for quiz data received from backend, matching snake_case
 interface Option {
@@ -57,18 +58,6 @@ export default function Dashboard() {
     const [errorMyQuizzes, setErrorMyQuizzes] = useState<string | null>(null);
     const [errorJoinedQuizzes, setErrorJoinedQuizzes] = useState<string | null>(null);
     const [joinCode, setJoinCode] = useState<string>(''); // State for join code input
-    const [csrfToken, setCsrfToken] = useState<string | null>(null); // State to store CSRF token
-
-    // Effect to get CSRF token once the component mounts and DOM is fully ready
-    useEffect(() => {
-        const token = (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content;
-        if (token) {
-            setCsrfToken(token);
-        } else {
-            console.error("CSRF token meta tag not found in DOM!");
-            // Optionally show a user-friendly error or toast here
-        }
-    }, []); // Runs once on component mount
 
     // Effect to fetch quizzes created by the user
     useEffect(() => {
@@ -100,14 +89,34 @@ export default function Dashboard() {
             setErrorJoinedQuizzes(null);
             try {
                 const response = await fetch('/quizzes/myj');
+                
+                // Handle non-OK responses
                 if (!response.ok) {
+                    // Only show error for actual server errors (5xx), not for empty results
+                    if (response.status >= 500) {
+                        throw new Error(`Server error: ${response.status}`);
+                    }
+                    // For 404 or other client errors, just return empty array
+                    if (response.status === 404 || response.status === 401) {
+                        setJoinedQuizzes([]);
+                        setLoadingJoinedQuizzes(false);
+                        return;
+                    }
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
+                
                 const data: Quiz[] = await response.json();
-                setJoinedQuizzes(data);
-            } catch (err) {
+                // Ensure data is an array (handle null or undefined)
+                setJoinedQuizzes(Array.isArray(data) ? data : []);
+            } catch (err: any) {
                 console.error("Failed to fetch joined quizzes:", err);
-                setErrorJoinedQuizzes("Failed to load joined quizzes. Please try again.");
+                // Only show error for actual network/server errors, not for empty results
+                if (err.message && !err.message.includes('404') && !err.message.includes('401')) {
+                    setErrorJoinedQuizzes("Failed to load joined quizzes. Please try again.");
+                } else {
+                    // For client errors (404, 401), just set empty array without showing error
+                    setJoinedQuizzes([]);
+                }
             } finally {
                 setLoadingJoinedQuizzes(false);
             }
@@ -157,74 +166,42 @@ export default function Dashboard() {
             return;
         }
 
-        const tokenToUse = csrfToken || (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content;
+        try {
+            const { data } = await axios.post('/quizzes/join', { code: joinCode });
 
-        if (!tokenToUse) {
             Swal.fire({
                 toast: true,
                 position: 'top-end',
-                icon: 'error',
-                title: 'CSRF token not found. Please refresh the page.',
+                icon: 'success',
+                title: data.message || 'Successfully joined the quiz!',
                 showConfirmButton: false,
                 timer: 3000,
                 timerProgressBar: true,
             });
-            console.error("Attempted to send request without CSRF token.");
-            return;
-        }
-
-        try {
-            const response = await fetch('/quizzes/join', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': tokenToUse,
-                },
-                body: JSON.stringify({ code: joinCode }),
-            });
-
-            const result = await response.json();
-
-            if (response.ok) {
-                Swal.fire({
-                    toast: true,
-                    position: 'top-end',
-                    icon: 'success',
-                    title: result.message || 'Successfully joined the quiz!',
-                    showConfirmButton: false,
-                    timer: 3000,
-                    timerProgressBar: true,
-                });
-                setJoinCode(''); // Clear input on success
-                // Re-fetch joined quizzes to update the list
-                const joinedResponse = await fetch('/quizzes/myj');
-                if (joinedResponse.ok) {
-                    const updatedJoinedQuizzes: Quiz[] = await joinedResponse.json();
-                    setJoinedQuizzes(updatedJoinedQuizzes);
-                }
-                // Redirect to the quiz page using the quiz_id from the response
-                if (result.quiz_id) {
-                    window.location.href = `/quizzes/${result.quiz_id}`; // Direct redirect for now
-                }
-            } else {
-                const iconType = response.status === 400 ? 'warning' : 'error';
-                Swal.fire({
-                    toast: true,
-                    position: 'top-end',
-                    icon: iconType,
-                    title: result.message || 'Quiz not found or failed to join.',
-                    showConfirmButton: false,
-                    timer: 3000,
-                    timerProgressBar: true,
-                });
+            setJoinCode(''); // Clear input on success
+            // Re-fetch joined quizzes to update the list
+            const joinedResponse = await fetch('/quizzes/myj');
+            if (joinedResponse.ok) {
+                const updatedJoinedQuizzes: Quiz[] = await joinedResponse.json();
+                setJoinedQuizzes(updatedJoinedQuizzes);
             }
-        } catch (err) {
+            // Redirect to the quiz page using the quiz_id from the response
+            if (data.quiz_id) {
+                window.location.href = `/quizzes/${data.quiz_id}`; // Direct redirect for now
+            }
+        } catch (err: any) {
             console.error("Error joining quiz:", err);
+            const status = err?.response?.status;
+            const iconType = status === 400 ? 'warning' : 'error';
+            const errorMessage = status === 419
+                ? 'Your session has expired. Please refresh the page.'
+                : err?.response?.data?.message || 'Quiz not found or failed to join.';
+
             Swal.fire({
                 toast: true,
                 position: 'top-end',
-                icon: 'error',
-                title: 'An error occurred while trying to join the quiz.',
+                icon: iconType,
+                title: errorMessage,
                 showConfirmButton: false,
                 timer: 3000,
                 timerProgressBar: true,

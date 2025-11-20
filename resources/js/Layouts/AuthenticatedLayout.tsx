@@ -43,7 +43,7 @@ export default function Authenticated({
                     </div>
 
                     {/* Links section */}
-                    <div className="mt-6 space-y-1">
+                    <div className="mt-6 space-y-4">
                         {/* Check user role and render menu accordingly */}
                         {user?.role === 2 ? (
                             <>
@@ -60,7 +60,40 @@ export default function Authenticated({
                                     My Performance
                                 </ResponsiveNavLink>
                             </>
+                        ) : (user?.role === 3 || user?.role === 1) ? (
+                            // Organizer and Teacher Menu
+                            <>
+                                <ResponsiveNavLink href={user?.role === 3 ? "/organizerLobby" : "/dashboard"} className="text-red-600">
+                                    Dashboard
+                                </ResponsiveNavLink>
+                                <ResponsiveNavLink href="/audit-trails" className="text-red-600">
+                                    All Audit Trails
+                                </ResponsiveNavLink>
+                                <ResponsiveNavLink href="/session-history" className="text-red-600">
+                                    Session History
+                                </ResponsiveNavLink>
+                                {user?.role === 3 && (
+                                    <ResponsiveNavLink href="/lobby-management" className="text-red-600">
+                                        Lobby Management
+                                    </ResponsiveNavLink>
+                                )}
+                                <ResponsiveNavLink href="/quiz-management" className="text-red-600">
+                                    Quiz Management
+                                </ResponsiveNavLink>
+                                <ResponsiveNavLink href="/scoring" className="text-red-600">
+                                    Scoring / Results
+                                </ResponsiveNavLink>
+                                <ResponsiveNavLink href="/statistics" className="text-red-600">
+                                    Question Statistics
+                                </ResponsiveNavLink>
+                                {user?.role === 3 && (
+                                    <ResponsiveNavLink href="/pre-registration" className="text-red-600">
+                                        Pre-Registration Logs
+                                    </ResponsiveNavLink>
+                                )}
+                            </>
                         ) : (
+                            // Other roles
                             <>
                                <ResponsiveNavLink href="dashboard" className="text-red-600">
                                     Dashboard
@@ -74,7 +107,6 @@ export default function Authenticated({
                                 <ResponsiveNavLink href="templates" className="text-red-600">
                                     Templates 
                                 </ResponsiveNavLink>
-                                
                             </>
                         )}
                     </div>
@@ -136,13 +168,16 @@ export default function Authenticated({
                                 <Dropdown.Link href={route('settings')}>
                                     Settings
                                 </Dropdown.Link>
-                                <Dropdown.Link
-                                    href={route('logout')}
-                                    method="post"
-                                    as="button"
-                                >
-                                    Log Out
-                                </Dropdown.Link>
+                                {/* Hide logout for participants (role 4) */}
+                                {user?.role !== 4 && (
+                                    <Dropdown.Link
+                                        href={route('logout')}
+                                        method="post"
+                                        as="button"
+                                    >
+                                        Log Out
+                                    </Dropdown.Link>
+                                )}
                             </Dropdown.Content>
                         </Dropdown>
                     </div>

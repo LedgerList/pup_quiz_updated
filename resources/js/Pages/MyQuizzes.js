@@ -58,15 +58,35 @@ export default function Dashboard() {
             setErrorJoinedQuizzes(null);
             try {
                 const response = await fetch('/quizzes/myj');
+                
+                // Handle non-OK responses
                 if (!response.ok) {
+                    // Only show error for actual server errors (5xx), not for empty results
+                    if (response.status >= 500) {
+                        throw new Error(`Server error: ${response.status}`);
+                    }
+                    // For 404 or other client errors, just return empty array
+                    if (response.status === 404 || response.status === 401) {
+                        setJoinedQuizzes([]);
+                        setLoadingJoinedQuizzes(false);
+                        return;
+                    }
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
+                
                 const data = await response.json();
-                setJoinedQuizzes(data);
+                // Ensure data is an array (handle null or undefined)
+                setJoinedQuizzes(Array.isArray(data) ? data : []);
             }
             catch (err) {
                 console.error("Failed to fetch joined quizzes:", err);
-                setErrorJoinedQuizzes("Failed to load joined quizzes. Please try again.");
+                // Only show error for actual network/server errors, not for empty results
+                if (err.message && !err.message.includes('404') && !err.message.includes('401')) {
+                    setErrorJoinedQuizzes("Failed to load joined quizzes. Please try again.");
+                } else {
+                    // For client errors (404, 401), just set empty array without showing error
+                    setJoinedQuizzes([]);
+                }
             }
             finally {
                 setLoadingJoinedQuizzes(false);

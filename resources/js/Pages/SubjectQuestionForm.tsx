@@ -1,7 +1,7 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, router, usePage } from '@inertiajs/react';
 import { useState, useRef, useMemo, ChangeEvent, useEffect } from 'react';
-import { X, PlusCircle, Eye, Save, LogOut, Trash2, Copy, Clock, List, Star, Image as ImageIcon, Trash2Icon, Edit2Icon, ChevronDown } from 'lucide-react';
+import { X, PlusCircle, Eye, Save, LogOut, Trash2, Copy, Clock, List, Star, Image as ImageIcon, Trash2Icon, Edit2Icon, ChevronDown, Sparkles } from 'lucide-react';
 import Swal from 'sweetalert2';
 import 'sweetalert2/dist/sweetalert2.min.css';
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '@/Components/ui/table';
@@ -34,7 +34,8 @@ interface Question {
 }
 
 export default function SubjectQuestionForm() {
-
+    const { auth } = usePage().props as any;
+    const user = auth?.user;
 
     const [questions, setQuestions] = useState<Question[]>([]);
     const [previewContent, setPreviewContent] = useState<React.ReactNode[]>([]);
@@ -706,7 +707,18 @@ export default function SubjectQuestionForm() {
         // setQuizTitle('');
         // setPreviewContent([]);
         // setShowPreview(false);
-        router.get("/organizerLobby")
+        
+        // Redirect based on user role
+        // Role 3 = Organizer → organizerLobby
+        // Role 1 = Teacher → dashboard
+        if (user?.role === 3) {
+            router.get("/organizerLobby");
+        } else if (user?.role === 1) {
+            router.get("/dashboard");
+        } else {
+            // Default fallback
+            router.get("/dashboard");
+        }
     };
 
     const handleDelete = (id: number): void => {
@@ -756,7 +768,21 @@ export default function SubjectQuestionForm() {
                         </button>
                         <h2 className="text-2xl font-bold mb-4">Create a new quiz</h2>
 
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                            <div className="border rounded-lg p-4 shadow-md text-center cursor-pointer hover:bg-gray-50 transition-colors bg-gradient-to-br from-purple-50 to-pink-50 border-purple-200" onClick={() => {
+                                setShowModal(false);
+                                const subjectQuery = subjectId ? `?subject_id=${subjectId}` : '';
+                                router.visit(`/explore${subjectQuery}`);
+                            }}>
+                                <div className="flex items-center justify-center mb-2">
+                                    <div className="bg-gradient-to-br from-purple-500 to-pink-500 rounded-full p-3">
+                                        <Sparkles size={32} className="text-white" />
+                                    </div>
+                                </div>
+                                <h3 className="font-semibold text-purple-700">AI Generation</h3>
+                                <p className="text-sm text-gray-600 mb-2">Generate quiz using AI</p>
+                                <button className="bg-gradient-to-r from-purple-500 to-pink-500 text-white px-4 py-2 rounded hover:from-purple-600 hover:to-pink-600 transition-colors font-medium">AI Generate</button>
+                            </div>
                             <div className="border rounded-lg p-4 shadow-md text-center cursor-not-allowed opacity-60">
                                 <img src="https://placehold.co/96x96/e0e0e0/333333?text=PDF" alt="PDF to Quiz" className="mx-auto mb-2 w-24 h-24 object-contain" />
                                 <h3 className="font-semibold">PDF to Quiz</h3>
@@ -793,14 +819,21 @@ export default function SubjectQuestionForm() {
                 {/* Column 1 - Quiz Questions (Collapsible) */}
                 <div className={`relative transition-all duration-300 ${isFirstColumnCollapsed ? 'md:hidden' : 'block'
                     }`}>
-                    {/* Collapse/Expand Button */}
-                    <button
-                        onClick={() => setIsFirstColumnCollapsed(!isFirstColumnCollapsed)}
-                        className="absolute -right-3 top-4 z-10 bg-red-600 text-white p-2 rounded-full shadow-lg hover:bg-red-700 transition-colors md:block hidden"
-                        title={isFirstColumnCollapsed ? "Expand Questions Panel" : "Collapse Questions Panel"}
-                    >
-                        {isFirstColumnCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
-                    </button>
+                    {/* Collapse/Expand Button - Only show when NOT collapsed */}
+                    {!isFirstColumnCollapsed && (
+                        <button
+                            onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setIsFirstColumnCollapsed(true);
+                            }}
+                            className="absolute -right-3 top-4 z-50 bg-red-600 text-white p-2 rounded-full shadow-lg hover:bg-red-700 transition-colors md:flex hidden items-center justify-center cursor-pointer"
+                            title="Collapse Questions Panel"
+                            type="button"
+                        >
+                            <ChevronLeft size={16} />
+                        </button>
+                    )}
                     <div>
                         <div className="mt-6 mb-10">
                             {/* Round Selector */}
@@ -1082,11 +1115,16 @@ export default function SubjectQuestionForm() {
 
                 {/* Collapsed State - Show Expand Button */}
                 {isFirstColumnCollapsed && (
-                    <div className="fixed left-4 top-1/2 transform -translate-y-1/2 z-20 md:block hidden">
+                    <div className="fixed left-4 top-1/2 transform -translate-y-1/2 z-50 md:flex hidden items-center justify-center">
                         <button
-                            onClick={() => setIsFirstColumnCollapsed(false)}
-                            className="bg-red-600 text-white p-3 rounded-full shadow-lg hover:bg-red-700 transition-colors"
+                            onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setIsFirstColumnCollapsed(false);
+                            }}
+                            className="bg-red-600 text-white p-3 rounded-full shadow-lg hover:bg-red-700 transition-colors cursor-pointer"
                             title="Expand Questions Panel"
+                            type="button"
                         >
                             <ChevronRight size={20} />
                         </button>
@@ -1132,6 +1170,7 @@ export default function SubjectQuestionForm() {
                         </button>
                         <button
                             onClick={handleExit}
+                            type="button"
                             className="bg-gray-200 text-gray-800 px-4 py-2 rounded-lg shadow-md flex-1 flex items-center justify-center hover:bg-gray-300 transition-colors font-semibold"
                         >
                             <LogOut size={18} className="mr-2" /> Exit

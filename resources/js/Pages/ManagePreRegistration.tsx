@@ -1,6 +1,6 @@
 import { router, usePage } from '@inertiajs/react'
 import React, { useState } from 'react';
-import { Search, User, Clock, MapPin, Calendar, Filter, Eye, Ban, FileCheck2, Hash, LayoutDashboardIcon } from 'lucide-react';
+import { Search, User, Clock, MapPin, Calendar, Filter, Eye, Ban, FileCheck2, Hash, LayoutDashboardIcon, ChevronDown, ChevronUp, Users } from 'lucide-react';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 
 import { PageProps } from '@/types';
@@ -16,6 +16,7 @@ function ManagePreRegistration({ }: Props) {
     const { auth } = usePage<PageProps>().props
     const [searchTerm, setSearchTerm] = useState('');
     const [filterActive, setFilterActive] = useState('all');
+    const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
 
 
     const formatDateTime = (timestamp) => {
@@ -307,14 +308,33 @@ function ManagePreRegistration({ }: Props) {
                                         <th className="px-6 py-4 text-left text-sm font-semibold text-white">Team Leader</th>
                                         <th className="px-6 py-4 text-left text-sm font-semibold text-white">Email</th>
                                         <th className="px-6 py-4 text-left text-sm font-semibold text-white w-fit truncate">Contact Number</th>
+                                        <th className="px-6 py-4 text-left text-sm font-semibold text-white w-fit truncate">Members</th>
                                         <th className="px-6 py-4 text-left text-sm font-semibold text-white w-fit truncate">View Preview</th>
                                         <th className="px-6 py-4 text-left text-sm font-semibold text-white w-fit truncate">Action</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-200">
-                                    {filteredData.map((session, index) => (
+                                    {filteredData.map((session, index) => {
+                                        const isExpanded = expandedRows.has(session.id);
+                                        let membersData: any[] = [];
+                                        
+                                        if (session.members) {
+                                            try {
+                                                membersData = typeof session.members === 'string' 
+                                                    ? JSON.parse(session.members) 
+                                                    : session.members;
+                                                if (!Array.isArray(membersData)) {
+                                                    membersData = [];
+                                                }
+                                            } catch (e) {
+                                                console.error('Error parsing members:', e);
+                                                membersData = [];
+                                            }
+                                        }
+                                        
+                                        return (
+                                        <React.Fragment key={session.id}>
                                         <tr
-                                            key={session.id}
                                             id={`pre-reg-${session.id}`}
                                             className={`hover:bg-red-50 transition-colors duration-200 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'
                                                 }`}
@@ -330,16 +350,46 @@ function ManagePreRegistration({ }: Props) {
                                             <td className="px-6 py-4">
                                                 <div className="flex items-center w-fit truncate">
                                                     <User className="w-4 h-4 text-gray-400 mr-2" />
-                                                    <span className="text-gray-900 font-medium uppercase">{session.team_leader}</span>
+                                                    <span className="text-gray-900 font-medium uppercase">
+                                                        {session.team_leader || 'N/A'}
+                                                    </span>
                                                 </div>
                                             </td>
                                             <td className="px-6 py-4">
-                                                {session.team_leader_email}
+                                                <span className="text-gray-900">
+                                                    {session.team_leader_email || 'N/A'}
+                                                </span>
                                             </td>
                                             <td className="px-6 py-4">
                                                 <div className="flex items-center">
                                                     <Hash className="w-4 h-4 text-gray-400 mr-2" />
-                                                    <span className="text-gray-900 font-mono">{session.contact_number}</span>
+                                                    <span className="text-gray-900 font-mono">
+                                                        {session.contact_number || 'N/A'}
+                                                    </span>
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <div className="flex items-center gap-2">
+                                                    <Users className="w-4 h-4 text-gray-400" />
+                                                    <span className="text-gray-900 font-medium">
+                                                        {membersData.length} {membersData.length === 1 ? 'Member' : 'Members'}
+                                                    </span>
+                                                    {membersData.length > 0 && (
+                                                        <button
+                                                            onClick={() => {
+                                                                const newExpanded = new Set(expandedRows);
+                                                                if (isExpanded) {
+                                                                    newExpanded.delete(session.id);
+                                                                } else {
+                                                                    newExpanded.add(session.id);
+                                                                }
+                                                                setExpandedRows(newExpanded);
+                                                            }}
+                                                            className="ml-2 text-red-600 hover:text-red-800"
+                                                        >
+                                                            {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                                                        </button>
+                                                    )}
                                                 </div>
                                             </td>
                                             <td className="px-6 py-4 text-center">
@@ -347,55 +397,93 @@ function ManagePreRegistration({ }: Props) {
                                                     size='sm'
                                                     className='bg-green-600 hover:bg-green-800'
                                                     onClick={() => {
-                                                        const baseURL = window.location.origin + "/";
-
-                                                        const membersData = JSON.parse(session.members)
-                                                        // alert(JSON.stringify(membersData))
-                                                        console.log(JSON.stringify(membersData))
-                                                        // Example files array - replace with your actual data
-                                                        const files = [
-                                                            // {
-                                                            //     url: 'https://example.com/document.pdf',
-                                                            //     type: 'pdf',
-                                                            //     name: 'Registration Form.pdf'
-                                                            // },
-                                                            {
-                                                                url: '/storage/' + session.student_id,
-                                                                type: 'image',
-                                                                name: `Valid Student ID (${session.team_leader})`
-                                                            },
-                                                            {
-                                                                url: '/storage/' + session.registration_form,
-                                                                type: 'image',
-                                                                name: `Registration Form (${session.team_leader})`
-                                                            },
-                                                            {
-                                                                url: '/storage/' + session.consent_form,
-                                                                type: 'image',
-                                                                name: `Consent Form (${session.team_leader})`
+                                                        try {
+                                                            const files: any[] = [];
+                                                            
+                                                            // Add team leader files
+                                                            if (session.student_id) {
+                                                                files.push({
+                                                                    url: '/storage/' + session.student_id,
+                                                                    type: 'image',
+                                                                    name: `Valid Student ID - Team Leader (${session.team_leader || 'N/A'})`
+                                                                });
                                                             }
-                                                        ];
+                                                            if (session.registration_form) {
+                                                                files.push({
+                                                                    url: '/storage/' + session.registration_form,
+                                                                    type: 'image',
+                                                                    name: `Registration Form - Team Leader (${session.team_leader || 'N/A'})`
+                                                                });
+                                                            }
+                                                            if (session.consent_form) {
+                                                                files.push({
+                                                                    url: '/storage/' + session.consent_form,
+                                                                    type: 'image',
+                                                                    name: `Consent Form - Team Leader (${session.team_leader || 'N/A'})`
+                                                                });
+                                                            }
 
-                                                        membersData.forEach(member => {
-                                                            files.push(
-                                                                {
-                                                                    url: '/storage/' + member.requirements.studentId,
-                                                                    type: 'image',
-                                                                    name: `Valid Student ID (${member.name})`
-                                                                },
-                                                                {
-                                                                    url: '/storage/' + member.requirements.registrationForm,
-                                                                    type: 'image',
-                                                                    name: `Registration Form (${member.name})`
-                                                                },
-                                                                {
-                                                                    url: '/storage/' + member.requirements.consentForm,
-                                                                    type: 'image',
-                                                                    name: `Consent Form (${member.name})`
+                                                            // Add members files
+                                                            if (session.members) {
+                                                                let membersData;
+                                                                try {
+                                                                    membersData = typeof session.members === 'string' 
+                                                                        ? JSON.parse(session.members) 
+                                                                        : session.members;
+                                                                } catch (e) {
+                                                                    console.error('Error parsing members:', e);
+                                                                    membersData = [];
                                                                 }
-                                                            );
-                                                        });
-                                                        handleViewFiles(files);
+
+                                                                if (Array.isArray(membersData)) {
+                                                                    membersData.forEach((member: any) => {
+                                                                        if (member.requirements) {
+                                                                            if (member.requirements.studentId) {
+                                                                                files.push({
+                                                                                    url: '/storage/' + member.requirements.studentId,
+                                                                                    type: 'image',
+                                                                                    name: `Valid Student ID - ${member.name || 'Member'}`
+                                                                                });
+                                                                            }
+                                                                            if (member.requirements.registrationForm) {
+                                                                                files.push({
+                                                                                    url: '/storage/' + member.requirements.registrationForm,
+                                                                                    type: 'image',
+                                                                                    name: `Registration Form - ${member.name || 'Member'}`
+                                                                                });
+                                                                            }
+                                                                            if (member.requirements.consentForm) {
+                                                                                files.push({
+                                                                                    url: '/storage/' + member.requirements.consentForm,
+                                                                                    type: 'image',
+                                                                                    name: `Consent Form - ${member.name || 'Member'}`
+                                                                                });
+                                                                            }
+                                                                        }
+                                                                    });
+                                                                }
+                                                            }
+
+                                                            if (files.length === 0) {
+                                                                Swal.fire({
+                                                                    icon: 'info',
+                                                                    title: 'No Files',
+                                                                    text: 'No files available to view',
+                                                                    confirmButtonColor: '#16a34a'
+                                                                });
+                                                                return;
+                                                            }
+
+                                                            handleViewFiles(files);
+                                                        } catch (error) {
+                                                            console.error('Error viewing files:', error);
+                                                            Swal.fire({
+                                                                icon: 'error',
+                                                                title: 'Error',
+                                                                text: 'Failed to load files. Please try again.',
+                                                                confirmButtonColor: '#dc2626'
+                                                            });
+                                                        }
                                                     }}
                                                 >
                                                     <Eye className="w-4 h-4 text-white" />
@@ -414,7 +502,52 @@ function ManagePreRegistration({ }: Props) {
                                                 </Button>
                                             </td>
                                         </tr>
-                                    ))}
+                                        {isExpanded && membersData.length > 0 && (
+                                            <tr className={`${index % 2 === 0 ? 'bg-gray-50' : 'bg-white'}`}>
+                                                <td colSpan={7} className="px-6 py-4">
+                                                    <div className="bg-white rounded-lg border border-gray-200 p-4">
+                                                        <h4 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                                                            <Users className="w-5 h-5 text-red-600" />
+                                                            Team Members Information
+                                                        </h4>
+                                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                                            {membersData.map((member: any, memberIndex: number) => (
+                                                                <div key={memberIndex} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                                                                    <h5 className="font-semibold text-gray-800 mb-2">{member.name || `Member ${memberIndex + 1}`}</h5>
+                                                                    <div className="space-y-1 text-sm">
+                                                                        <p className="text-gray-600">
+                                                                            <span className="font-medium">Student Number:</span> {member.studentNumber || 'N/A'}
+                                                                        </p>
+                                                                        <p className="text-gray-600">
+                                                                            <span className="font-medium">Course/Year:</span> {member.courseYear || 'N/A'}
+                                                                        </p>
+                                                                        {member.requirements && (
+                                                                            <div className="mt-2 pt-2 border-t border-gray-300">
+                                                                                <p className="font-medium text-gray-700 mb-1">Requirements:</p>
+                                                                                <ul className="space-y-1 text-xs">
+                                                                                    <li className={member.requirements.studentId ? 'text-green-600' : 'text-gray-400'}>
+                                                                                        {member.requirements.studentId ? '✓' : '✗'} Student ID
+                                                                                    </li>
+                                                                                    <li className={member.requirements.registrationForm ? 'text-green-600' : 'text-gray-400'}>
+                                                                                        {member.requirements.registrationForm ? '✓' : '✗'} Registration Form
+                                                                                    </li>
+                                                                                    <li className={member.requirements.consentForm ? 'text-green-600' : 'text-gray-400'}>
+                                                                                        {member.requirements.consentForm ? '✓' : '✗'} Consent Form
+                                                                                    </li>
+                                                                                </ul>
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        )}
+                                        </React.Fragment>
+                                    );
+                                    })}
                                 </tbody>
                             </table>
                         </div>

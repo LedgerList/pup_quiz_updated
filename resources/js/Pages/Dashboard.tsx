@@ -1,9 +1,10 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, Link, usePage } from '@inertiajs/react';
-import { useState, useEffect, ChangeEvent } from 'react';
+import { useState, ChangeEvent } from 'react';
 import { PlusCircle, FileText, Clock, Star, Code } from 'lucide-react'; // Import icons
 import Swal from 'sweetalert2'; // Import Swal for toasts
 import 'sweetalert2/dist/sweetalert2.min.css';
+import axios from 'axios';
 
 // Define interfaces for quiz data received from backend, matching snake_case
 interface Option {
@@ -48,75 +49,15 @@ export default function Dashboard() {
     const { auth } = usePage().props as { auth: { user: User } };
     const user: User = auth.user;
 
-    const [myQuizzes, setMyQuizzes] = useState<Quiz[]>([]);
-    const [activeTab, setActiveTab] = useState<'published' | 'drafts' | 'archive'>('published');
-    const [loading, setLoading] = useState<boolean>(true);
-    const [error, setError] = useState<string | null>(null);
     const [joinCode, setJoinCode] = useState<string>(''); // State for join code input
     // Added state to store CSRF token once it's retrieved
-    const [csrfToken, setCsrfToken] = useState<string | null>(null); 
+    
+    // Check if user is a teacher (role 1) or student (role 2)
+    const isTeacher = user?.role === 1;
+    const isStudent = user?.role === 2; 
 
     // Effect to get CSRF token once the component mounts and DOM is fully ready
-    useEffect(() => {
-        const token = (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content;
-        if (token) {
-            setCsrfToken(token);
-        } else {
-            console.error("CSRF token meta tag not found in DOM!");
-            // Optionally show a user-friendly error or toast here
-        }
-    }, []); // Runs once on component mount
-
-    useEffect(() => {
-        const fetchMyQuizzes = async () => {
-            setLoading(true);
-            setError(null);
-            try {
-                // Fetch quizzes created by the authenticated user
-                const response = await fetch('/quizzes/my');
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                const data: Quiz[] = await response.json();
-                setMyQuizzes(data);
-            } catch (err) {
-                console.error("Failed to fetch quizzes:", err);
-                setError("Failed to load quizzes. Please try again.");
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        fetchMyQuizzes();
-    }, []); // Empty dependency array means this runs once on mount
-
-    // Filter quizzes based on active tab
-    const filteredQuizzes = myQuizzes.filter(quiz => {
-        // Ensure quiz.status exists and matches the active tab
-        if (activeTab === 'published') {
-            return quiz.status === 'published';
-        } else if (activeTab === 'drafts') {
-            return quiz.status === 'draft';
-        } else if (activeTab === 'archive') {
-            return quiz.status === 'archived';
-        }
-        return false; // Should not happen if tabs are exhaustive
-    });
-
-    // Calculate counts for each tab
-    const publishedCount = myQuizzes.filter(q => q.status === 'published').length;
-    const draftsCount = myQuizzes.filter(q => q.status === 'draft').length;
-    const archiveCount = myQuizzes.filter(q => q.status === 'archived').length;
-
-    // Function to format date for display
-    const formatDate = (dateString: string) => {
-        const date = new Date(dateString);
-        return date.toLocaleDateString('en-US', {
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric',
-        });
-    };
+    // Teachers don't use lobby system - no data fetching needed
 
     const handleJoinQuiz = async () => {
         if (!joinCode.trim()) {
@@ -132,72 +73,42 @@ export default function Dashboard() {
             return;
         }
 
-        // Use the CSRF token stored in state. If for some reason it's still null, try to query it again.
-        const tokenToUse = csrfToken || (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content;
-
-        if (!tokenToUse) {
-            Swal.fire({
-                toast: true,
-                position: 'top-end',
-                icon: 'error',
-                title: 'CSRF token not found. Please refresh the page.',
-                showConfirmButton: false,
-                timer: 3000,
-                timerProgressBar: true,
-            });
-            console.error("Attempted to send request without CSRF token.");
-            return;
-        }
-
         try {
-            const response = await fetch('/quizzes/join', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': tokenToUse,
-                },
-                body: JSON.stringify({ code: joinCode }),
-            });
+            const { data } = await axios.post('/quizzes/join', { code: joinCode });
 
-            const result = await response.json();
-
-            if (response.ok) {
-                Swal.fire({
-                    toast: true,
-                    position: 'top-end',
-                    icon: 'success',
-                    title: result.message || 'Successfully joined the quiz!',
-                    showConfirmButton: false,
-                    timer: 3000,
-                    timerProgressBar: true,
-                });
-                setJoinCode(''); 
-       
-                if (result.quiz_id) {
-                    window.location.href = `/quizzes/${result.quiz_id}/starting`;
-                }
-            } else {
-                Swal.fire({
-                    toast: true,
-                    position: 'top-end',
-                    icon: 'error',
-                    title: result.message || 'Quiz not found or failed to join.',
-                    showConfirmButton: false,
-                    timer: 3000,
-                    timerProgressBar: true,
-                });
-            }
-        } catch (err) {
-            console.error("Error joining quiz:", err);
             Swal.fire({
                 toast: true,
                 position: 'top-end',
-                icon: 'error',
-                title: 'An error occurred while trying to join the quiz.',
+                icon: 'success',
+                title: data.message || 'Successfully joined the quiz!',
                 showConfirmButton: false,
                 timer: 3000,
                 timerProgressBar: true,
             });
+            setJoinCode(''); 
+   
+            if (data.quiz_id) {
+                window.location.href = `/quizzes/${data.quiz_id}/starting`;
+            }
+        } catch (err: any) {
+            const status = err?.response?.status;
+            const apiMessage = err?.response?.data?.message;
+            const errorMessage = status === 419
+                ? 'Your session has expired. Please refresh and try again.'
+                : apiMessage || 'Quiz not found or failed to join.';
+
+            Swal.fire({
+                toast: true,
+                position: 'top-end',
+                icon: status === 419 ? 'warning' : 'error',
+                title: errorMessage,
+                showConfirmButton: false,
+                timer: 3000,
+                timerProgressBar: true,
+            });
+            if (status === 419) {
+                console.error('CSRF/token mismatch while joining quiz');
+            }
         }
     };
 
@@ -216,84 +127,181 @@ export default function Dashboard() {
                                     style={{ backgroundImage: 'url(/images/card.jpg)', backgroundSize: 'cover' }}
                                 >
                                     <h2 className="text-3xl font-semibold text-white"> Hello, {user?.name || 'Guest'}</h2>
-                                    <p className="mt-4 text-white text-lg">Let's put your knowledge to the test!</p>
+                                    <p className="mt-4 text-white text-lg">
+                                        {isTeacher 
+                                            ? "Create engaging quizzes for your students!" 
+                                            : "Let's put your knowledge to the test!"}
+                                    </p>
                                 </div>
 
-                                {/* Join Code Card */}
-                                <div
-                                    className="bg-white shadow rounded-lg p-6 border-2 border-red-500"
-                                    style={{ backgroundImage: 'url(/images/card2.jpg)', backgroundSize: 'cover' }}
-                                >
-                                    <input
-                                        type="text"
-                                        placeholder="Enter Join Code"
-                                        className="mt-4 p-2 rounded-md w-full text-black"
-                                        value={joinCode}
-                                        onChange={(e: ChangeEvent<HTMLInputElement>) => setJoinCode(e.target.value)}
-                                    />
-                                    <button
-                                        onClick={handleJoinQuiz}
-                                        className="mt-4 w-full bg-red-500 text-white p-3 rounded-md text-lg hover:bg-red-600 transition-colors"
+                                {/* Conditional Card - Join Code for Students, Quick Actions for Teachers */}
+                                {isStudent ? (
+                                    <div
+                                        className="bg-white shadow rounded-lg p-6 border-2 border-red-500"
+                                        style={{ backgroundImage: 'url(/images/card2.jpg)', backgroundSize: 'cover' }}
                                     >
-                                        Join
-                                    </button>
-                                </div>
+                                        <input
+                                            type="text"
+                                            placeholder="Enter Join Code"
+                                            className="mt-4 p-2 rounded-md w-full text-black"
+                                            value={joinCode}
+                                            onChange={(e: ChangeEvent<HTMLInputElement>) => setJoinCode(e.target.value)}
+                                        />
+                                        <button
+                                            onClick={handleJoinQuiz}
+                                            className="mt-4 w-full bg-red-500 text-white p-3 rounded-md text-lg hover:bg-red-600 transition-colors"
+                                        >
+                                            Join
+                                        </button>
+                                    </div>
+                                ) : isTeacher ? (
+                                    <div
+                                        className="bg-white shadow rounded-lg p-6 border-2 border-blue-500"
+                                        style={{ backgroundImage: 'url(/images/card2.jpg)', backgroundSize: 'cover' }}
+                                    >
+                                        <h3 className="text-xl font-semibold text-white mb-4">Quick Actions</h3>
+                                        <div className="space-y-3">
+                                            <Link
+                                                href="/createquiz"
+                                                className="block w-full bg-blue-500 text-white p-3 rounded-md text-lg hover:bg-blue-600 transition-colors text-center"
+                                            >
+                                                Create New Quiz
+                                            </Link>
+                                            <Link
+                                                href="/myquizzes"
+                                                className="block w-full bg-orange-500 text-white p-3 rounded-md text-lg hover:bg-orange-600 transition-colors text-center"
+                                            >
+                                                Manage Quiz
+                                            </Link>
+                                        </div>
+                                    </div>
+                                ) : null}
                             </div>
 
                             <div className="mt-8 text-center">
-                                <p className="text-lg font-semibold text-gray-800">Discover</p>
+                                <p className="text-lg font-semibold text-gray-800">
+                                    {isTeacher ? "Create & Manage" : "Discover"}
+                                </p>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mt-6">
-                                    {/* Flashcards Card */}
-                                    <div className="bg-white shadow rounded-lg overflow-hidden">
-                                        <img
-                                            src="/images/quiz.png"
-                                            alt="Flashcards"
-                                            className="w-full h-48 object-cover"
-                                        />
-                                        <div className="p-4">
-                                            <h3 className="text-lg font-semibold">Flashcards</h3>
-                                        </div>
-                                    </div>
+                                    {isTeacher ? (
+                                        <>
+                                            {/* Create Your Own Quiz on a Blank Canvas Card */}
+                                            <Link href="/createquiz" className="block">
+                                                <div className="bg-white shadow rounded-lg overflow-hidden hover:shadow-lg transition cursor-pointer">
+                                                    <img
+                                                        src="/images/quiz2.png"
+                                                        alt="Create Your Own Quiz"
+                                                        className="w-full h-48 object-cover"
+                                                    />
+                                                    <div className="p-4">
+                                                        <h3 className="text-lg font-semibold">Create Your Own Quiz</h3>
+                                                    </div>
+                                                </div>
+                                            </Link>
 
-                                    {/* Convert PDF/Docs to Quiz Card */}
-                                    <div className="bg-white shadow rounded-lg overflow-hidden">
-                                        <img
-                                            src="/images/quiz4.png"
-                                            alt="Convert PDF/Docs to Quiz"
-                                            className="w-full h-48 object-cover"
-                                        />
-                                        <div className="p-4">
-                                            <h3 className="text-lg font-semibold">Convert PDF/Docs to Quiz</h3>
-                                        </div>
-                                    </div>
+                                            {/* My Library Card */}
+                                            <Link href="/mylibrary" className="block">
+                                                <div className="bg-white shadow rounded-lg overflow-hidden hover:shadow-lg transition cursor-pointer">
+                                                    <img
+                                                        src="/images/quiz.png"
+                                                        alt="My Library"
+                                                        className="w-full h-48 object-cover"
+                                                    />
+                                                    <div className="p-4">
+                                                        <h3 className="text-lg font-semibold">My Library</h3>
+                                                    </div>
+                                                </div>
+                                            </Link>
 
-                                    {/* Generate a Quiz Instantly with AI Card */}
-                                    <div className="bg-white shadow rounded-lg overflow-hidden">
-                                        <img
-                                            src="/images/quiz3.png"
-                                            alt="Generate Quiz Instantly"
-                                            className="w-full h-48 object-cover"
-                                        />
-                                        <div className="p-4">
-                                            <h3 className="text-lg font-semibold">Generate a Quiz Instantly with AI</h3>
-                                        </div>
-                                    </div>
+                                            {/* My Quizzes Card */}
+                                            <Link href="/myquizzes" className="block">
+                                                <div className="bg-white shadow rounded-lg overflow-hidden hover:shadow-lg transition cursor-pointer">
+                                                    <img
+                                                        src="/images/quiz.png"
+                                                        alt="My Quizzes"
+                                                        className="w-full h-48 object-cover"
+                                                    />
+                                                    <div className="p-4">
+                                                        <h3 className="text-lg font-semibold">My Quizzes</h3>
+                                                    </div>
+                                                </div>
+                                            </Link>
 
-                                    {/* Create Your Own Quiz on a Blank Canvas Card */}
-                                         <a href="/createquiz" className="block">
-                                    <div className="bg-white shadow rounded-lg overflow-hidden hover:shadow-lg transition">
-                                        <img
-                                        src="/images/quiz2.png"
-                                        alt="Create Your Own Quiz"
-                                        className="w-full h-48 object-cover"
-                                        />
-                                        <div className="p-4">
-                                        <h3 className="text-lg font-semibold">Create Your Own Quiz on a Blank Canvas</h3>
-                                        </div>
-                                    </div>
-                                    </a>
+                                            {/* AI Quiz Generator Card */}
+                                            <Link href="/explore" className="block">
+                                                <div className="bg-white shadow rounded-lg overflow-hidden hover:shadow-lg transition cursor-pointer">
+                                                    <img
+                                                        src="/images/quiz3.png"
+                                                        alt="AI Quiz Generator"
+                                                        className="w-full h-48 object-cover"
+                                                    />
+                                                    <div className="p-4">
+                                                        <h3 className="text-lg font-semibold">AI Quiz Generator</h3>
+                                                    </div>
+                                                </div>
+                                            </Link>
+                                        </>
+                                    ) : (
+                                        <>
+                                            {/* Flashcards Card */}
+                                            <div className="bg-white shadow rounded-lg overflow-hidden">
+                                                <img
+                                                    src="/images/quiz.png"
+                                                    alt="Flashcards"
+                                                    className="w-full h-48 object-cover"
+                                                />
+                                                <div className="p-4">
+                                                    <h3 className="text-lg font-semibold">Flashcards</h3>
+                                                </div>
+                                            </div>
+
+                                            {/* Convert PDF/Docs to Quiz Card */}
+                                            <Link href="/explore" className="block">
+                                                <div className="bg-white shadow rounded-lg overflow-hidden hover:shadow-lg transition cursor-pointer">
+                                                    <img
+                                                        src="/images/quiz4.png"
+                                                        alt="Convert PDF/Docs to Quiz"
+                                                        className="w-full h-48 object-cover"
+                                                    />
+                                                    <div className="p-4">
+                                                        <h3 className="text-lg font-semibold">Convert PDF/Docs to Quiz</h3>
+                                                    </div>
+                                                </div>
+                                            </Link>
+
+                                            {/* Generate a Quiz Instantly with AI Card */}
+                                            <Link href="/explore" className="block">
+                                                <div className="bg-white shadow rounded-lg overflow-hidden hover:shadow-lg transition cursor-pointer">
+                                                    <img
+                                                        src="/images/quiz3.png"
+                                                        alt="Generate Quiz Instantly"
+                                                        className="w-full h-48 object-cover"
+                                                    />
+                                                    <div className="p-4">
+                                                        <h3 className="text-lg font-semibold">Generate a Quiz Instantly with AI</h3>
+                                                    </div>
+                                                </div>
+                                            </Link>
+
+                                            {/* Create Your Own Quiz on a Blank Canvas Card */}
+                                            <Link href="/createquiz" className="block">
+                                                <div className="bg-white shadow rounded-lg overflow-hidden hover:shadow-lg transition">
+                                                    <img
+                                                        src="/images/quiz2.png"
+                                                        alt="Create Your Own Quiz"
+                                                        className="w-full h-48 object-cover"
+                                                    />
+                                                    <div className="p-4">
+                                                        <h3 className="text-lg font-semibold">Create Your Own Quiz on a Blank Canvas</h3>
+                                                    </div>
+                                                </div>
+                                            </Link>
+                                        </>
+                                    )}
                                 </div>
                             </div>
+
+                            {/* My Quizzes Section - Removed for Teachers (no lobby system) */}
 
                           
                         </div>

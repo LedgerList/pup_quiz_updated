@@ -32,9 +32,9 @@ const Lobby = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   useEffect(() => {
     const channel = window.Echo.channel('quiz-room_' + id);
-    console.log(channel)
+    // Channel initialized
     channel.listen('QuizEvent', (e: any) => {
-      console.log('Received event:', e);
+      // Event received (sensitive data excluded)
       setState(e.state);
     });
 
@@ -49,7 +49,7 @@ const Lobby = () => {
       setTeams(response.data)
 
     } catch (error) {
-      console.log(error)
+      // Error handled (details not logged to prevent data exposure)
     }
   }
 
@@ -66,7 +66,7 @@ const Lobby = () => {
 
       }
     } catch (error) {
-      console.log(error)
+      // Error handled (details not logged to prevent data exposure)
     }
   }
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -82,7 +82,7 @@ const Lobby = () => {
 
 
     } catch (error) {
-      console.log(error)
+      // Error handled (details not logged to prevent data exposure)
     } finally {
       setLoading(false)
     }
@@ -115,7 +115,7 @@ const Lobby = () => {
       setLeaderboard(response.data)
       setIsModalOpen(true)
     } catch (error) {
-      console.log(error)
+      // Error handled (details not logged to prevent data exposure)
     }
   }
   const [savingShortAns, setSavingShortAns] = useState(false)
@@ -185,15 +185,28 @@ const Lobby = () => {
           iconColor: '#dc3545',
         });
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error during report download:', error);
+      let errorMessage = 'An error occurred during download.';
+      
+      if (error.response) {
+        // Server responded with error status
+        errorMessage = error.response.data?.message || `Server error: ${error.response.status}`;
+      } else if (error.request) {
+        // Request was made but no response received
+        errorMessage = 'No response from server. Please check your connection.';
+      } else {
+        // Something else happened
+        errorMessage = error.message || 'An unexpected error occurred.';
+      }
+      
       Swal.fire({
         toast: true,
         position: 'top-end',
         icon: 'error',
-        title: 'An error occurred during download.',
+        title: errorMessage,
         showConfirmButton: false,
-        timer: 3000,
+        timer: 4000,
         timerProgressBar: true,
         background: '#fff',
         color: '#dc3545',
@@ -248,6 +261,19 @@ const Lobby = () => {
 
             {teams?.map((team, index) => {
               const isHovered = hoveredTeam === index;
+              
+              // Safely parse members JSON, default to empty array if undefined or invalid
+              let members = [];
+              try {
+                if (team.members && typeof team.members === 'string') {
+                  members = JSON.parse(team.members);
+                } else if (Array.isArray(team.members)) {
+                  members = team.members;
+                }
+              } catch (error) {
+                console.error('Error parsing team members:', error);
+                members = [];
+              }
 
               return (
                 <div
@@ -274,7 +300,7 @@ const Lobby = () => {
                         </h3>
                         <div className="flex items-center gap-1 text-sm text-orange-600 font-medium">
                           <User className="w-3 h-3" />
-                          <span>{JSON.parse(team.members).length} members</span>
+                          <span>{members.length} members</span>
                         </div>
                       </div>
 
@@ -282,13 +308,13 @@ const Lobby = () => {
                     <div className="flex-1 pl-3 flex items-center  gap-x-2">
                       <UserCircle2Icon className='text-orange-800 w-8 h-8' />
                       <h3 className="text-md font-bold text-orange-900 group-hover:text-orange-800 transition-colors duration-300">
-                        {team.team_leader}
+                        {team.team_leader || 'N/A'}
                       </h3>
 
                     </div>
                     {/* Members List with enhanced styling */}
                     <div className="space-y-3">
-                      {JSON.parse(team.members).map((member, mIndex) => (
+                      {members.map((member, mIndex) => (
                         <div
                           key={mIndex}
                           className="group/member flex items-center gap-3 p-3 rounded-xl hover:bg-orange-50/60 transition-all duration-300 cursor-pointer"
@@ -296,14 +322,14 @@ const Lobby = () => {
                           {/* Member Avatar */}
                           <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-r from-orange-400 to-orange-500 flex items-center justify-center shadow-md group-hover/member:shadow-lg transition-shadow duration-300">
                             <span className="text-white text-sm font-bold">
-                              {member.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                              {member.name ? member.name.split(' ').map(n => n[0]).join('').slice(0, 2) : '??'}
                             </span>
                           </div>
 
                           {/* Member Info */}
                           <div className="flex-1 min-w-0">
                             <p className="font-medium text-orange-800 group-hover/member:text-orange-900 transition-colors duration-300 truncate">
-                              {member.name}
+                              {member.name || 'Unknown Member'}
                             </p>
                           </div>
 
@@ -321,10 +347,10 @@ const Lobby = () => {
                           <span className="text-sm font-medium">Team Ready</span>
                         </div>
                         <div className="flex items-center gap-1">
-                          {[...Array(JSON.parse(team.members).length)].map((_, i) => (
+                          {[...Array(members.length)].map((_, i) => (
                             <div
                               key={i}
-                              className={`w-2 h-2 rounded-full transition-all duration-300 ${i < Math.min(JSON.parse(team.members).length, JSON.parse(team.members).length)
+                              className={`w-2 h-2 rounded-full transition-all duration-300 ${i < Math.min(members.length, members.length)
                                 ? 'bg-orange-400'
                                 : 'bg-orange-200'
                                 }`}
@@ -397,11 +423,19 @@ const Lobby = () => {
                 </Button>
               </div>
               <div className='flex justify-center mt-10'>
-                <Button disabled={savingShortAns} onClick={() => handleGenerateReport()} className='bg-transparent text-1xl p-5 text-orange-700 hover:bg-orange-600 hover:text-white'>
+                <Button 
+                  disabled={savingShortAns} 
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleGenerateReport();
+                  }} 
+                  className='bg-transparent text-1xl p-5 text-orange-700 hover:bg-orange-600 hover:text-white cursor-pointer'
+                  type="button"
+                >
                   {
                     savingShortAns ? " Downloading ..." : " Generate Report"
                   }
-
                 </Button>
               </div>
             </div>

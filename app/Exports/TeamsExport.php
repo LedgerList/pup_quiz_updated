@@ -36,7 +36,12 @@ class TeamsExport implements FromCollection, WithHeadings, WithMapping, WithStyl
     public function collection()
     {
         $lobby = Lobby::where('id', $this->lobbyId)->first();
-        $this->event = $lobby->name;
+        
+        if (!$lobby) {
+            return collect([]);
+        }
+        
+        $this->event = $lobby->name ?? 'Unknown Event';
 
         return Participants::where("lobby_code", $lobby->lobby_code)
             ->where("archive", 1)
@@ -63,7 +68,7 @@ class TeamsExport implements FromCollection, WithHeadings, WithMapping, WithStyl
     public function map($team): array
     {
         $members = json_decode($team->members, true);
-        $memberNames = collect($members)->pluck('name')->implode(', ');
+        $memberNames = is_array($members) ? collect($members)->pluck('name')->implode(', ') : ($team->members ?? '');
         $this->rankCounter++;
 
         return [
@@ -97,12 +102,18 @@ class TeamsExport implements FromCollection, WithHeadings, WithMapping, WithStyl
                 $sheet = $event->sheet->getDelegate();
 
                 // --- Logo in column B (B1) ---
-                $drawing = new \PhpOffice\PhpSpreadsheet\Worksheet\Drawing();
-                $drawing->setPath(public_path('images/school_logo.png'));
-                $drawing->setHeight(50);
-                $drawing->setCoordinates('B1');
-                $drawing->setOffsetX(5);
-                $drawing->setWorksheet($sheet);
+                if (file_exists(public_path('images/school_logo.png'))) {
+                    try {
+                        $drawing = new \PhpOffice\PhpSpreadsheet\Worksheet\Drawing();
+                        $drawing->setPath(public_path('images/school_logo.png'));
+                        $drawing->setHeight(50);
+                        $drawing->setCoordinates('B1');
+                        $drawing->setOffsetX(5);
+                        $drawing->setWorksheet($sheet);
+                    } catch (\Exception $e) {
+                        // Silently fail if logo cannot be added
+                    }
+                }
 
                 // --- University Name (Row 1) - Merge entire row ---
                 $sheet->mergeCells('A1:H1');
@@ -110,13 +121,19 @@ class TeamsExport implements FromCollection, WithHeadings, WithMapping, WithStyl
                 $sheet->getStyle('A1')->getFont()->setItalic(true)->setSize(16);
                 $sheet->getStyle('A1')->getAlignment()->setHorizontal('center')->setVertical('center');
 
-                // --- Logo in column B (G1) ---
-                $logo_right = new \PhpOffice\PhpSpreadsheet\Worksheet\Drawing();
-                $logo_right->setPath(public_path('images/LOGO.png'));
-                $logo_right->setHeight(50);
-                $logo_right->setCoordinates('H1');
-                $logo_right->setOffsetX(5);
-                $logo_right->setWorksheet($sheet);
+                // --- Logo in column H (H1) ---
+                if (file_exists(public_path('images/LOGO.png'))) {
+                    try {
+                        $logo_right = new \PhpOffice\PhpSpreadsheet\Worksheet\Drawing();
+                        $logo_right->setPath(public_path('images/LOGO.png'));
+                        $logo_right->setHeight(50);
+                        $logo_right->setCoordinates('H1');
+                        $logo_right->setOffsetX(5);
+                        $logo_right->setWorksheet($sheet);
+                    } catch (\Exception $e) {
+                        // Silently fail if logo cannot be added
+                    }
+                }
 
                 // --- Report Title (Row 2) - Merge entire row ---
                 $sheet->mergeCells('A2:H2');

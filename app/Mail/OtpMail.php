@@ -50,12 +50,21 @@ class OtpMail extends Mailable
 
     public function build()
     {
+        $logoCid = null;
+        $logoPath = public_path('images/LOGO.png');
+
+        if (file_exists($logoPath)) {
+            $logoCid = $this->embed($logoPath);
+        }
+
         return $this->subject($this->subject_line)
-            ->view('emails.otp')->with([
-                    'name' => $this->name,
-                    'email' => $this->email,
-                    'body' => $this->body,
-                ]);
+            ->view('emails.otp')
+            ->with([
+                'name' => $this->name,
+                'email' => $this->email,
+                'body' => $this->body,
+                'logoCid' => $logoCid,
+            ]);
     }
     /**
      * Get the attachments for the message.

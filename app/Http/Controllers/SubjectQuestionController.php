@@ -89,11 +89,16 @@ class SubjectQuestionController extends Controller
             ]);
         }
 
-
-        // return response()->json([
-        //     'message' => 'Question created successfully',
-        //     'user' => $user,
-        // ], 201);
+        // Return Inertia response if it's an Inertia request, otherwise return JSON
+        if (request()->header('X-Inertia')) {
+            return redirect()->back()->with('success', 'Quiz created successfully!');
+        }
+        
+        // Return JSON for non-Inertia requests (API calls)
+        return response()->json([
+            'success' => true,
+            'message' => 'Quiz created successfully',
+        ], 200);
     }
 
     /**

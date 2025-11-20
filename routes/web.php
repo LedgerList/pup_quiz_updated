@@ -18,6 +18,7 @@ use App\Http\Controllers\ParticipantController;
 use App\Http\Controllers\QuizEventController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\SessionLogsController;
+use App\Http\Controllers\TieBreakerController;
 use App\Http\Controllers\SubjectController;
 use App\Http\Controllers\SubjectQuestionController;
 use App\Models\EndedEvent;
@@ -54,6 +55,7 @@ Route::get('/login', function () {
 Route::post('/otp-login', [EmailController::class, 'sendOtp'])->name("otp-login");
 Route::post('/resendOTP', [EmailController::class, 'resendOTP']);
 Route::post('/verifyOtp', [EmailController::class, 'verifyOtp'])->name("verifyOtp");
+Route::post('/send-registration-otp', [EmailController::class, 'sendRegistrationOtp'])->name("send-registration-otp");
 //Views Routes
 Route::get('/dashboard', function (Request $request) {
 
@@ -74,47 +76,72 @@ Route::get('/dashboard', function (Request $request) {
     }
 
 
+    // Only redirect Organizers (role 3) to organizerLobby, Teachers (role 1) should see regular Dashboard
     if (Auth::user()->role == 3) {
-
         return redirect()->route('organizerLobby');
     }
     return Inertia::render('Dashboard');
 })->middleware(['auth', 'verified'])->name('dashboard');
-Route::get('/explore', function () {
-    return Inertia::render('Explore');
+Route::get('/explore', function (Request $request) {
+    return Inertia::render('Explore', [
+        'subject_id' => $request->query('subject_id')
+    ]);
 })->middleware(['auth', 'verified'])->name('explore');
 
 Route::get('/session-history', function () {
+    try {
+        $logs = SessionLogs::with('user')
+            ->where("user_id", Auth::id())
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->map(function ($log) {
+                return [
+                    'id' => $log->id,
+                    'user_id' => $log->user_id,
+                    'user_name' => $log->user->name ?? 'Unknown',
+                    'ip_address' => $log->ip_address ?? 'N/A',
+                    'created_at' => $log->created_at ? $log->created_at->toISOString() : null,
+                    'logout_timestamp' => $log->logout_timestamp ? $log->logout_timestamp->toISOString() : null,
+                ];
+            });
 
-    $logs =  SessionLogs::where("user_id", Auth::id())->get();
-
-    return Inertia::render('SessionHistory', [
-        "logs" => $logs
-    ]);
+        return Inertia::render('SessionHistory', [
+            "logs" => $logs
+        ]);
+    } catch (\Exception $e) {
+        \Log::error('Error fetching session history: ' . $e->getMessage());
+        return Inertia::render('SessionHistory', [
+            "logs" => []
+        ]);
+    }
 })->middleware(['auth', 'verified'])->name('session-history');
 Route::get('/lobby-management', function () {
-
-    $logs =  LoobyManagement::with('lobby')->where("user_id", Auth::id())->get();
+    // Only allow organizers (role 3) to access this page
+    if (Auth::user()->role !== 3) {
+        return redirect()->route('dashboard')->with('error', 'Access denied. This page is only available for organizers.');
+    }
+    
+    $logs = LoobyManagement::with('lobby')->where("user_id", Auth::id())->get();
+    $lobbies = Lobby::where("user_id", Auth::id())->get();
 
     return Inertia::render('LobbyManagement', [
-        "logs" => $logs
+        "logs" => $logs,
+        "lobbies" => $lobbies
     ]);
 })->middleware(['auth', 'verified'])->name('lobby-management');
 Route::get('/participant-management', function () {
     return Inertia::render('ParticipantManagement');
 })->middleware(['auth', 'verified'])->name('participant-management');
 Route::get('/quiz-management', function () {
-    $logs =  QuizManagement::with('question')->where("user_id", Auth::id())->get();
-    // $logs = QuizManagement::with([
-    //     'question' => function ($query) {
-    //         $query->where('deleted', '0');
-    //     }
-    // ])
-    //     ->where('user_id', Auth::id())
-    //     ->get();
+    $logs = QuizManagement::with(['question.subject.lobby'])
+        ->where("user_id", Auth::id())
+        ->latest()
+        ->get();
+    $lobbies = Lobby::where("user_id", Auth::id())->get();
 
     return Inertia::render('QuizManagement', [
-        "logs" => $logs
+        "logs" => $logs,
+        "lobbies" => $lobbies
     ]);
 })->middleware(['auth', 'verified'])->name('quiz-management');
 
@@ -152,9 +179,11 @@ Route::get('/getLobbySubjects/{lobby_id}', function ($lobby_id) {
 
 
 Route::get('/scoring', function () {
-    $logs =  LeaderboardLog::with('participant')->where("user_id", Auth::id())->get();
+    $logs = LeaderboardLog::with('participant')->where("user_id", Auth::id())->get();
+    $lobbies = Lobby::where("user_id", Auth::id())->get();
     return Inertia::render('Scoring', [
-        "logs" => $logs
+        "logs" => $logs,
+        "lobbies" => $lobbies
     ]);
 })->middleware(['auth', 'verified'])->name('scoring');
 
@@ -182,11 +211,21 @@ Route::get('/category', function () {
     return Inertia::render('Category');
 })->name('category');
 Route::get('/pre-registration', function () {
-
+    // Only allow organizers (role 3) to access this page
+    if (Auth::user()->role !== 3) {
+        return redirect()->route('dashboard')->with('error', 'Access denied. This page is only available for organizers.');
+    }
+    
     try {
-        $logs =  PreRegistration::with('lobby', 'participant')->where("user_id", Auth::user()->id)->get();
+        $logs = PreRegistration::with('lobby', 'participant')->where("user_id", Auth::user()->id)->get();
+        // Make hidden fields visible for the participant relationship
+        $logs->each(function ($log) {
+            if ($log->participant) {
+                $log->participant->makeVisible(['team_leader_email', 'contact_number', 'student_number', 'student_id', 'consent_form', 'registration_form', 'members']);
+            }
+        });
+        $lobbies = Lobby::where("user_id", Auth::id())->get();
     } catch (\Exception $e) {
-        // Return error response if something goes wrong
         return response()->json([
             'success' => false,
             'message' => 'Something went wrong during registration.',
@@ -194,11 +233,15 @@ Route::get('/pre-registration', function () {
         ], 500);
     }
     return Inertia::render('PreRegistrationLogs', [
-        "logs" => $logs
+        "logs" => $logs,
+        "lobbies" => $lobbies
     ]);
-})->name('pre-registration');
+})->middleware(['auth', 'verified'])->name('pre-registration');
 Route::get('/manage-pre-registration/{lobby_code}', function ($lobby_code) {
-    $pre_registration =  Participants::where("lobby_code", $lobby_code)->where('is_approved', 0)->get();
+    $pre_registration =  Participants::where("lobby_code", $lobby_code)
+        ->where('is_approved', 0)
+        ->get()
+        ->makeVisible(['team_leader', 'team_leader_email', 'student_number', 'contact_number', 'student_id', 'consent_form', 'registration_form', 'members']);
     $lobby =  Lobby::where("lobby_code", $lobby_code)->first();
     return Inertia::render('ManagePreRegistration', [
         "lobby" => $lobby,
@@ -214,9 +257,189 @@ Route::post('/manage-pre-registration', [ParticipantController::class, "managePr
 // })->name('lobby');
 
 
+Route::get('/lobby', function () {
+    if (Auth::check()) {
+        // Only redirect organizers (role 3) to organizerLobby
+        if (Auth::user()->role === 3) {
+            return redirect()->route('organizerLobby');
+        }
+        // Teachers and other roles go to their dashboard
+        return redirect()->route('dashboard');
+    }
+    return redirect()->route('login');
+})->name('lobby.index');
+
 Route::get('/organizerLobby', function () {
+    // Only allow organizers (role 3) to access this page
+    if (Auth::user()->role !== 3) {
+        return redirect()->route('dashboard')->with('error', 'Access denied. This page is only available for organizers.');
+    }
     return Inertia::render('OrganizerLobby');
 })->middleware(['auth', 'verified'])->name('organizerLobby');
+
+Route::get('/audit-trails', function () {
+    $userId = Auth::id();
+    $allLogs = [];
+    
+    // Get organizer's lobbies
+    $organizerLobbies = Lobby::where('user_id', $userId)->pluck('id')->toArray();
+    
+    // Get Session History Logs (only for the organizer)
+    $sessionLogs = SessionLogs::where('user_id', $userId)->get();
+    foreach ($sessionLogs as $log) {
+        $user = \App\Models\User::find($log->user_id);
+        $allLogs[] = [
+            'id' => 'session-' . $log->id,
+            'type' => 'Session History',
+            'user_name' => $user->name ?? 'Unknown',
+            'action' => $log->logout_timestamp ? 'Logout' : 'Login',
+            'description' => $log->logout_timestamp 
+                ? "User logged out" 
+                : "User logged in from " . ($log->ip_address ?? 'Unknown IP'),
+            'ip_address' => $log->ip_address ?? 'N/A',
+            'timestamp' => $log->logout_timestamp ?? $log->created_at,
+            'lobby_id' => null,
+            'lobby_name' => null
+        ];
+    }
+    
+    // Get Lobby Management Logs
+    $lobbyLogs = LoobyManagement::with('lobby')->where('user_id', $userId)->get();
+    foreach ($lobbyLogs as $log) {
+        $user = \App\Models\User::find($log->user_id);
+        $actionMap = [0 => 'Create', 1 => 'Edit', 2 => 'Delete'];
+        $lobbyName = $log->lobby?->name ?? 'Unknown';
+        $action = $actionMap[$log->action] ?? 'modified';
+        $allLogs[] = [
+            'id' => 'lobby-' . $log->id,
+            'type' => 'Lobby Management',
+            'user_name' => $user->name ?? 'Unknown',
+            'action' => $actionMap[$log->action] ?? 'Unknown',
+            'description' => "Lobby '{$lobbyName}' was {$action}",
+            'ip_address' => 'N/A',
+            'timestamp' => $log->created_at,
+            'lobby_id' => $log->lobby_id,
+            'lobby_name' => $lobbyName
+        ];
+    }
+    
+    // Get Quiz Management Logs (all logs for questions in organizer's lobbies)
+    $quizLogs = QuizManagement::with(['question.subject.lobby'])
+        ->whereHas('question.subject.lobby', function($q) use ($organizerLobbies) {
+            $q->whereIn('id', $organizerLobbies);
+        })
+        ->get();
+    foreach ($quizLogs as $log) {
+        $user = \App\Models\User::find($log->user_id);
+        $actionMap = [0 => 'Create', 1 => 'Edit', 2 => 'Delete'];
+        $question = $log->question;
+        $lobby = $question->subject->lobby ?? null;
+        $questionText = $question->question ?? 'Unknown';
+        $action = $actionMap[$log->action] ?? 'modified';
+        if ($lobby && in_array($lobby->id, $organizerLobbies)) {
+            $allLogs[] = [
+                'id' => 'quiz-' . $log->id,
+                'type' => 'Quiz Management',
+            'user_name' => $user->name ?? 'Unknown',
+            'action' => $actionMap[$log->action] ?? 'Unknown',
+            'description' => "Question '{$questionText}' was {$action}",
+            'ip_address' => 'N/A',
+            'timestamp' => $log->created_at,
+            'lobby_id' => $lobby?->id ?? null,
+            'lobby_name' => $lobby?->name ?? null
+            ];
+        }
+    }
+    
+    // Get Scoring/Results Logs (all logs for participants in organizer's lobbies)
+    $scoringLogs = LeaderboardLog::with(['participant.subject.lobby'])
+        ->whereHas('participant.subject.lobby', function($q) use ($organizerLobbies) {
+            $q->whereIn('id', $organizerLobbies);
+        })
+        ->get();
+    foreach ($scoringLogs as $log) {
+        $user = \App\Models\User::find($log->user_id);
+        $participant = $log->participant;
+        $lobby = $participant->subject->lobby ?? null;
+        $teamName = $participant->team ?? 'Unknown';
+        if ($lobby && in_array($lobby->id, $organizerLobbies)) {
+            $allLogs[] = [
+                'id' => 'scoring-' . $log->id,
+                'type' => 'Scoring / Results',
+            'user_name' => $user->name ?? 'Unknown',
+            'action' => 'Score Recorded',
+            'description' => "Team '{$teamName}' scored {$log->total_score} points (Rank: {$log->place})",
+            'ip_address' => 'N/A',
+            'timestamp' => $log->created_at,
+            'lobby_id' => $lobby?->id ?? null,
+            'lobby_name' => $lobby?->name ?? null
+            ];
+        }
+    }
+    
+    // Get Pre-Registration Logs (all logs for organizer's lobbies)
+    $preRegLogs = PreRegistration::with(['lobby', 'participant'])
+        ->whereIn('lobby_id', $organizerLobbies)
+        ->get();
+    foreach ($preRegLogs as $log) {
+        $user = \App\Models\User::find($log->user_id);
+        $statusMap = [1 => 'Rejected', 2 => 'Approved'];
+        $teamName = $log->participant?->team ?? 'Unknown';
+        $status = $statusMap[$log->status] ?? 'processed';
+        $lobbyName = $log->lobby?->name ?? 'Unknown';
+        $allLogs[] = [
+            'id' => 'prereg-' . $log->id,
+            'type' => 'Pre-Registration Logs',
+            'user_name' => $user->name ?? 'Unknown',
+            'action' => $statusMap[$log->status] ?? 'Pending',
+            'description' => "Team '{$teamName}' registration was {$status}",
+            'ip_address' => 'N/A',
+            'timestamp' => $log->created_at,
+            'lobby_id' => $log->lobby_id,
+            'lobby_name' => $lobbyName
+        ];
+    }
+    
+    // Get Question Statistics (PointsHistory for questions in organizer's lobbies)
+    $questionStats = \App\Models\PointsHistory::with(['question.subject.lobby'])
+        ->whereHas('question.subject.lobby', function($q) use ($organizerLobbies) {
+            $q->whereIn('id', $organizerLobbies);
+        })
+        ->get()
+        ->groupBy(function($item) {
+            return $item->question->subject->lobby_id ?? 0;
+        });
+    
+    foreach ($questionStats as $lobbyId => $stats) {
+        if ($lobbyId && in_array($lobbyId, $organizerLobbies)) {
+            $lobby = $stats->first()->question->subject->lobby ?? null;
+            $lobbyName = $lobby ? $lobby->name : 'Unknown Lobby';
+            $allLogs[] = [
+                'id' => 'stats-' . $lobbyId,
+                'type' => 'Question Statistics',
+                'user_name' => Auth::user()->name,
+                'action' => 'Active',
+                'description' => "Question statistics updated for {$lobbyName} ({$stats->count()} records)",
+                'ip_address' => 'N/A',
+                'timestamp' => $stats->max('created_at') ? $stats->max('created_at') : now(),
+                'lobby_id' => $lobbyId,
+                'lobby_name' => $lobby ? $lobby->name : null
+            ];
+        }
+    }
+    
+    // Sort by timestamp (newest first)
+    usort($allLogs, function($a, $b) {
+        return strtotime($b['timestamp']) - strtotime($a['timestamp']);
+    });
+    
+    $lobbies = Lobby::where('user_id', $userId)->get();
+    
+    return Inertia::render('AuditTrails', [
+        'allLogs' => $allLogs,
+        'lobbies' => $lobbies
+    ]);
+})->middleware(['auth', 'verified'])->name('audit-trails');
 Route::get('/lobbyCategory/{id}', function ($lobbyCode) {
 
 
@@ -267,8 +490,10 @@ Route::get('/mylibrary', function () {
 Route::get('/templates', function () {
     return Inertia::render('Templates');
 })->name('templates');
-Route::get('/createquiz', function () {
-    return Inertia::render('CreateQuiz');
+Route::get('/createquiz', function (Request $request) {
+    return Inertia::render('CreateQuiz', [
+        'subject_id' => $request->query('subject_id')
+    ]);
 })->name('createquiz');
 Route::get('/settings', function () {
     return Inertia::render('Settings');
@@ -277,8 +502,32 @@ Route::get('/privacy', function () {
     return Inertia::render('Privacy');
 })->name('privacy');
 Route::get('/myperformance', function () {
-    return Inertia::render('MyPerformance');
-})->name('myperformance');
+    $userId = Auth::id();
+    
+    // Get actual quiz attempts for the user
+    $quizAttempts = \App\Models\QuizAttempt::where('user_id', $userId)
+        ->with(['quiz'])
+        ->where('status', 'completed') // Only show completed attempts
+        ->orderBy('end_time', 'desc')
+        ->get()
+        ->map(function ($attempt) {
+            return [
+                'id' => $attempt->id,
+                'quiz_id' => $attempt->quiz_id,
+                'quiz_title' => $attempt->quiz->title ?? 'Unknown Quiz',
+                'quiz_code' => $attempt->quiz->code ?? 'N/A',
+                'category' => $attempt->quiz->category ?? 'General',
+                'score' => $attempt->score ?? 0,
+                'date_taken' => $attempt->end_time ? $attempt->end_time->format('M d, Y') : ($attempt->created_at ? $attempt->created_at->format('M d, Y') : 'N/A'),
+                'type' => 'Teacher Quiz', // You can customize this based on quiz type
+                'status' => $attempt->status,
+            ];
+        });
+
+    return Inertia::render('MyPerformance', [
+        'quizAttempts' => $quizAttempts
+    ]);
+})->middleware(['auth', 'verified'])->name('myperformance');
 Route::get('/myquizzes', function () {
     return Inertia::render('MyQuizzes');
 })->name('myquizzes');
@@ -290,16 +539,14 @@ Route::get('/chairman', function () {
 })->name('chairman');
 
 Route::get('/statistics',  function () {
-
-    $categories =  Subjects::whereHas('lobby', function ($query) {
+    $categories = Subjects::whereHas('lobby', function ($query) {
         $query->where('user_id', Auth::id());
     })->get();
-    // $questions = SubjectQuestion::all();
     $questions = $categories->flatMap(function ($subject) {
         return $subject->subjectsQuestions;
     });
 
-    $topLobbyCategory =  DB::table('points_history')
+    $topLobbyCategory = DB::table('points_history')
         ->join('subject_questions', 'subject_questions.id', '=', 'points_history.question_id')
         ->join('subjects', 'subjects.id', '=', 'subject_questions.subject_id')
         ->join('lobby', 'lobby.id', '=', 'points_history.lobby_id')
@@ -323,10 +570,13 @@ Route::get('/statistics',  function () {
         ->limit(1)
         ->first();
 
+    $lobbies = Lobby::where("user_id", Auth::id())->get();
+
     return Inertia::render('QuizStatisticsDashboard', [
         'questions' => $questions,
         'categories' => $categories,
-        'topLobbyCategory' => $topLobbyCategory
+        'topLobbyCategory' => $topLobbyCategory,
+        'lobbies' => $lobbies
     ]);
 })->name('statistics');
 
@@ -365,9 +615,19 @@ Route::get('/lobby/{id}/{subject_id}/{team_id?}', function ($id, $subject_id, $t
     $subject = Subjects::findOrFail($subject_id);
     
     if ($team_id != "organizer") {
-
+        // This is an invitation link - mark invitation as accepted
         $team = Participants::findOrFail($team_id);
+        
+        // Verify the team belongs to this lobby and subject
+        $lobby = Lobby::where("id", $id)->where("archive", 0)->firstOrFail();
+        if ($team->lobby_code !== $lobby->lobby_code) {
+            abort(403, 'Invalid invitation link');
+        }
+        
+        // Mark invitation as accepted
         $team->subject_id = $subject_id;
+        $team->invitation_accepted = true;
+        $team->invitation_accepted_at = now();
         $team->save();
     }
    $event_status = EndedEvent::where('lobby_id', $id)
@@ -380,6 +640,23 @@ Route::get('/lobby/{id}/{subject_id}/{team_id?}', function ($id, $subject_id, $t
     $lobby = Lobby::where("id", $id)
         ->where("archive", 0)
         ->firstOrFail();
+
+    // Check if subject start_date is in the future - show EventReminder
+    // Subject start_date takes precedence over lobby start_date
+    $startDateToCheck = $subject->start_date ?? $lobby->start_date;
+    
+    if ($startDateToCheck) {
+        $now = Carbon::now('Asia/Manila');
+        $start = Carbon::parse($startDateToCheck)->setTimezone('Asia/Manila');
+        
+        if ($now->lessThan($start)) {
+            // Pass the start_date as ISO string for frontend countdown
+            return Inertia::render("EventReminder", [
+                "start_date" => $start->toIso8601String(),
+                "lobby_name" => $lobby->name ?? "Quiz Event"
+            ]);
+        }
+    }
 
     $current_question = $lobby->question_num;
 
@@ -408,18 +685,32 @@ Route::get('/lobby/{id}/{subject_id}/{team_id?}', function ($id, $subject_id, $t
 
 
 Route::get('/questionnaire/{id}/{team_id}/{subject_id}', function ($id, $team_id, $subject_id) {
-
-
+    // Mark invitation as accepted when accessing questionnaire via invitation link
+    if ($team_id != "organizer") {
+        $team = Participants::find($team_id);
+        if ($team && !$team->invitation_accepted) {
+            // Verify the team belongs to this lobby
+            $lobby = Lobby::where("id", $id)->where("archive", 0)->first();
+            if ($lobby && $team->lobby_code === $lobby->lobby_code) {
+                $team->subject_id = $subject_id;
+                $team->invitation_accepted = true;
+                $team->invitation_accepted_at = now();
+                $team->save();
+            }
+        }
+    }
 
     $subject = Subjects::where("id", $subject_id)->first();
-    $now = Carbon::now();
+    $now = Carbon::now('Asia/Manila');
 
     $lobby_event_now = Lobby::where("id", $id)
         ->where("archive", 0)
         ->firstOrFail();
 
-    if ($lobby_event_now) {
-        $start = Carbon::parse($lobby_event_now->start_date);
+    // Check if event start_date is in the future - show EventReminder
+    if ($lobby_event_now->start_date) {
+        $start = Carbon::parse($lobby_event_now->start_date)->setTimezone('Asia/Manila');
+        
         if ($now->lessThan($start)) {
             $diff = $now->diff($start); // DateInterval object
 
@@ -528,12 +819,21 @@ Route::get('/lobby-revealAnswer/{id}/{subject_id}', [LobbyController::class, 're
 Route::get('/lobby-nextquestion/{id}/{subject_id}', [LobbyController::class, 'nextquestion'])->name('lobby-nextquestion');
 Route::get('/lobby-revealLeaderboard/{id}/{subject_id}/{item_number}', [LobbyController::class, 'revealLeaderboard'])->name('lobby-revealLeaderboard');
 Route::post('/lobby', [LobbyController::class, 'store'])->name('lobby.store');
+Route::post('/lobby/quick-create', [LobbyController::class, 'quickCreate'])->name('lobby.quick-create')->middleware('auth');
 Route::post('/lobby/{id}', [LobbyController::class, 'update'])->name('lobby.update');
 Route::post('/lobby/{id}/delete', [LobbyController::class, 'destroy'])->name('lobby.destroy');
 
 Route::post('/close-event/{id}/{subject_id}', [QuizEventController::class, 'closeEvent'])->name('close-event');
 Route::get('/clear-prev-data/{id}/{subject_id}', [QuizEventController::class, 'clearPrevData'])->name('clear-prev-data');
 
+
+Route::get('/subject', function () {
+    if (Auth::check()) {
+        // Redirect to organizer lobby where subjects are managed
+        return redirect()->route('organizerLobby');
+    }
+    return redirect()->route('login');
+})->name('subject.index');
 
 Route::post('/subject', [SubjectController::class, 'store'])->name('subject.store');
 
@@ -544,6 +844,13 @@ Route::get('/organizer-lobbies', [LobbyController::class, 'getOrganizerLobby'])-
 Route::get('/lobby-status/{id}', [LobbyController::class, 'lobbyStatus'])->name('lobbyStatus');
 Route::post('/add-subject-quiz', [SubjectQuestionController::class, 'store'])->name('add-subject-quiz');
 Route::get('/getLobbyQuestion/{lobby_id}/{subject_id}', [SubjectQuestionController::class, 'getLobbyQuestion'])->name('getLobbyQuestion');
+
+// Tie Breaker Routes
+Route::get('/tie-breaker/check/{lobby_id}/{subject_id}', [TieBreakerController::class, 'checkForTies'])->name('tie-breaker.check');
+Route::post('/tie-breaker/start/{lobby_id}/{subject_id}', [TieBreakerController::class, 'startTieBreaker'])->name('tie-breaker.start');
+Route::get('/tie-breaker/question/{lobby_id}/{subject_id}', [TieBreakerController::class, 'getCurrentTieBreakerQuestion'])->name('tie-breaker.question');
+Route::post('/tie-breaker/answer/{lobby_id}/{subject_id}', [TieBreakerController::class, 'processTieBreakerAnswer'])->name('tie-breaker.answer');
+Route::post('/tie-breaker/next-round/{lobby_id}/{subject_id}', [TieBreakerController::class, 'nextTieBreakerRound'])->name('tie-breaker.next-round');
 Route::get('/updateScore/{id}/{score}/{ans}/{question}/{lobby_id}/{question_id}/{q_type}/{prev_score}/{new_question}', [ParticipantController::class, 'updateScore'])->name('updateScore');
 Route::get('/leaderboard/{id}/{subject_id}', [ParticipantController::class, 'leaderboard'])->name('leaderboard');
 Route::get('/currentQuestionLeaderboard/{id}/{question_id}', [ParticipantController::class, 'currentQuestionLeaderboard'])->name('currentQuestionLeaderboard');
@@ -552,10 +859,12 @@ Route::get('/participant-shor-answer/{id}/{subject_id}', [ParticipantController:
 Route::post('/participant-answer-update', [ParticipantController::class, 'updateAns'])->name('participant-shor-answer');
 
 Route::get('/report/teams/excel/{lobby_id}/{subject_id}', [ReportController::class, 'downloadTeamsReport']);
+Route::get('/report/lobby-management/{lobby_id?}', [ReportController::class, 'downloadLobbyManagementReport'])->name('report.lobby-management');
+Route::get('/report/quiz-management/{lobby_id?}', [ReportController::class, 'downloadQuizManagementReport'])->name('report.quiz-management');
 
 Route::post('/login-info', [LoginLogsController::class, 'isFirstLogin'])->name('login-info');
 
-Route::prefix('api/live-quizzes/{quiz}')->middleware('auth:sanctum')->group(function () {
+Route::prefix('api/live-quizzes/{quiz}')->middleware('auth')->group(function () {
     Route::get('session', [LiveQuizSessionController::class, 'getSessionState']);
 
     Route::post('create-session', [LiveQuizSessionController::class, 'createSession']);

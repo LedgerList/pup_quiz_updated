@@ -10,6 +10,7 @@ import LeaderBoardIcon from '@/CustomComponents/LeaderBoardIcon';
 import LeaderboardModal from '@/CustomComponents/LeaderBoardModal';
 import LoadingText from '@/CustomComponents/Loader';
 import { PageProps } from '@/types';
+import { soundManager } from '@/utils/soundEffects';
 import { router, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import { CheckCheckIcon, CheckIcon, FileQuestionIcon, Loader, Loader2Icon, NotepadTextDashed, PrinterIcon, RefreshCcw, TrophyIcon, X } from 'lucide-react';
@@ -131,7 +132,7 @@ const Questionnaire = () => {
 
   const handleLevelSelect = (level) => {
     setSelectedLevel(level);
-    console.log('Selected level:', level);
+    // Level selected
   };
 
   useEffect(() => {
@@ -145,21 +146,34 @@ const Questionnaire = () => {
 
   useEffect(() => {
     const channel = window.Echo.channel('quiz-room_' + id);
-    console.log(channel)
+    // Channel initialized
     channel.listen('QuizEvent', (e: any) => {
-      console.log('Received event:', e);
-      setState(e.state);
-      setCurrentQuestion(e.current_question)
-      setItemNumber(e.item_number)
-      setSelectedLevel(e.current_level)
-
-
+      // Event received (sensitive data excluded)
+      // Prevent duplicate question updates - only update if question ID is different
+      if (e.current_question && currentQuestion && e.current_question.id !== currentQuestion.id) {
+        setState(e.state);
+        setCurrentQuestion(e.current_question);
+        setItemNumber(e.item_number);
+        setSelectedLevel(e.current_level);
+        setSelectedOption(null); // Reset selected option when new question loads
+      } else if (!currentQuestion && e.current_question) {
+        // First question load
+        setState(e.state);
+        setCurrentQuestion(e.current_question);
+        setItemNumber(e.item_number);
+        setSelectedLevel(e.current_level);
+      } else if (e.state !== state) {
+        // State changed but same question - update state only
+        setState(e.state);
+        setItemNumber(e.item_number);
+        setSelectedLevel(e.current_level);
+      }
     });
 
     return () => {
-      window.Echo.leave('quiz-room');
+      window.Echo.leave('quiz-room_' + id);
     };
-  }, []);
+  }, [id, currentQuestion, state]);
 
   const updateScore = async (score: any, option, short_ans?: any) => {
 
@@ -196,10 +210,10 @@ const Questionnaire = () => {
       if (res.data) {
         localStorage.setItem('prev_score', res.data.prev_score)
       }
-      sumbmitAlert()
+      sumbmitAlert(currentQuestion?.['type'])
 
     } catch (error) {
-      console.log(error)
+      // Error handled (details not logged to prevent data exposure)
     }
   }
   const handleRevealOptions = async () => {
@@ -208,6 +222,7 @@ const Questionnaire = () => {
       const response = await axios.get(`/lobby-revealOptions/${id}/${subject_id}`)
 
       if (response.data == 1) {
+        soundManager.playSuccess();
         Swal.fire({
           toast: true,
           position: 'top-end',
@@ -222,7 +237,7 @@ const Questionnaire = () => {
         });
       }
     } catch (error) {
-      console.log(error)
+      // Error handled (details not logged to prevent data exposure)
     } finally {
       setLoading(false)
     }
@@ -233,6 +248,7 @@ const Questionnaire = () => {
     setLoading(true)
     try {
       await axios.get(`/lobby-revealAnswer/${id}/${subject_id}`)
+      soundManager.playWinner();
       Swal.fire({
         toast: true,
         position: 'top-end',
@@ -246,7 +262,7 @@ const Questionnaire = () => {
         iconColor: '#399918 ',
       });
     } catch (error) {
-      console.log(error)
+      // Error handled (details not logged to prevent data exposure)
     }
     finally {
       setLoading(false)
@@ -258,6 +274,7 @@ const Questionnaire = () => {
     setLoading(true)
     try {
       await axios.get(`/lobby-revealLeaderboard/${id}/${subject_id}/${items}`)
+      soundManager.playFirstPlace();
       Swal.fire({
         toast: true,
         position: 'top-end',
@@ -271,7 +288,7 @@ const Questionnaire = () => {
         iconColor: '#399918 ',
       });
     } catch (error) {
-      console.log(error)
+      // Error handled (details not logged to prevent data exposure)
     }
     finally {
       setLoading(false)
@@ -299,7 +316,7 @@ const Questionnaire = () => {
         iconColor: '#399918 ',
       });
     } catch (error) {
-      console.log(error)
+      // Error handled (details not logged to prevent data exposure)
     }
     finally {
       setLoading2(false)
@@ -310,6 +327,7 @@ const Questionnaire = () => {
     try {
       await axios.get(`/lobby-startTimer/${id}/${subject_id}`)
 
+      soundManager.playNotification();
       Swal.fire({
         toast: true,
         position: 'top-end',
@@ -323,7 +341,7 @@ const Questionnaire = () => {
         iconColor: '#399918 ',
       });
     } catch (error) {
-      console.log(error)
+      // Error handled (details not logged to prevent data exposure)
     }
     finally {
       setLoading(false)
@@ -337,6 +355,7 @@ const Questionnaire = () => {
       const response = await axios.get(`/lobby-nextquestion/${id}/${subject_id}`)
 
       if (response.data.status == 200) {
+        soundManager.playNotification();
         Swal.fire({
           toast: true,
           position: 'top-end',
@@ -353,25 +372,40 @@ const Questionnaire = () => {
         setSelectedLevel(null)
         localStorage.setItem("new_question", "yes")
       }
-      console.log(response)
+      // Response received (sensitive data excluded)
     } catch (error) {
-      console.log(error)
+      // Error handled (details not logged to prevent data exposure)
     } finally {
       setLoading(false)
     }
   }
-  const sumbmitAlert = () => {
+  const sumbmitAlert = (questionType?: string) => {
+    const type = questionType || currentQuestion?.['type'] || '';
+    
+    let message = 'Your answer has been submitted successfully.';
+    let reviewMessage = '';
+    
+    if (type === 'short-answer') {
+      message = 'Your short answer has been submitted successfully.';
+      reviewMessage = 'Please wait for the organizer to review your answer.';
+    } else if (type === 'multiple-choice') {
+      message = 'Your answer has been submitted successfully.';
+    } else if (type === 'true-false') {
+      message = 'Your answer has been submitted successfully.';
+    }
+    
     Swal.fire({
-      toast: true,
-      position: 'top-end',
-      icon: 'info',
-      title: 'Answer Submitted.',
-      showConfirmButton: false,
-      timer: 3000,
-      timerProgressBar: true,
-      background: '#fff',
-      color: '#399918',
-      iconColor: '#399918 ',
+      icon: 'success',
+      title: 'Answer Submitted!',
+      html: `
+        <div class="text-left">
+          <p class="mb-2">${message}</p>
+          ${reviewMessage ? `<p class="text-sm text-gray-600">${reviewMessage}</p>` : ''}
+        </div>
+      `,
+      confirmButtonColor: '#f97316',
+      confirmButtonText: 'OK',
+      allowOutsideClick: false,
     });
   }
 
@@ -391,7 +425,7 @@ const Questionnaire = () => {
 
     if (type == "short-answer") {
       // updateScore(currentQuestion['points'], option)
-      sumbmitAlert()
+      sumbmitAlert('short-answer')
       return
     }
 
@@ -419,13 +453,40 @@ const Questionnaire = () => {
   }
 
   const handleCloseEvent = async () => {
-
-    console.log("Leaderboard", leaderboard)
-    // return;
     setLoading(true)
     try {
+      // Check if leaderboard exists and has data
+      if (!leaderboard || leaderboard.length === 0) {
+        Swal.fire({
+          toast: true,
+          position: 'top-end',
+          icon: 'warning',
+          title: 'No Leaderboard Data',
+          text: 'Cannot close event without leaderboard data. Please wait for leaderboard to load.',
+          showConfirmButton: false,
+          timer: 4000,
+          timerProgressBar: true,
+          background: '#fff',
+          color: '#f59e0b',
+          iconColor: '#f59e0b',
+        });
+        setLoading(false);
+        return;
+      }
+
+      // Ensure leaderboard data includes subject_id for each entry
+      const leaderboardData = leaderboard.map(item => ({
+        id: item.id,
+        score: item.score || 0,
+        subject_id: subject_id, // Ensure subject_id is included
+        team: item.team,
+        prev_answer: item.prev_answer,
+        prev_answer_correct: item.prev_answer_correct
+      }));
+
       const formData = new FormData()
-      formData.append("leaderboard", JSON.stringify(leaderboard))
+      formData.append("leaderboard", JSON.stringify(leaderboardData))
+      
       const response = await axios.post(`/close-event/${id}/${subject_id}`, formData)
 
       if (response.data.status == 200) {
@@ -433,18 +494,71 @@ const Questionnaire = () => {
           toast: true,
           position: 'top-end',
           icon: 'success',
-          title: 'New question loaded',
+          title: 'Event Closed Successfully',
+          text: 'All participants have been sent back to the lobby.',
           showConfirmButton: false,
-          timer: 3000,
+          timer: 2000,
           timerProgressBar: true,
           background: '#fff',
           color: '#399918',
           iconColor: '#399918 ',
         });
+        
+        // Redirect after successful close (for both organizer and participant)
+        setTimeout(() => {
+          router.get(`/lobby/${id}/${subject_id}/${team_id}`);
+        }, 1500);
+      } else {
+        // Handle non-200 status codes
+        const message = response.data.message || 'Failed to close event';
+        Swal.fire({
+          toast: true,
+          position: 'top-end',
+          icon: 'error',
+          title: 'Error',
+          text: message,
+          showConfirmButton: false,
+          timer: 4000,
+          timerProgressBar: true,
+          background: '#fff',
+          color: '#dc2626',
+          iconColor: '#dc2626',
+        });
       }
 
-    } catch (error) {
-      console.log(error)
+    } catch (error: any) {
+      console.error('Error closing event:', error);
+      let errorMessage = 'Failed to close event. Please try again.';
+      
+      if (error.response) {
+        // Server responded with error status
+        errorMessage = error.response.data?.message || `Server error: ${error.response.status}`;
+        
+        // Handle tie breaker case
+        if (error.response.status === 409 && error.response.data?.has_ties) {
+          errorMessage = 'Tie detected. Tie breaker round required before closing event.';
+        }
+      } else if (error.request) {
+        // Request was made but no response received
+        errorMessage = 'No response from server. Please check your connection.';
+      } else {
+        // Error setting up the request
+        errorMessage = error.message || 'An unexpected error occurred.';
+      }
+      
+      Swal.fire({
+        toast: true,
+        position: 'top-end',
+        icon: 'error',
+        title: 'Error',
+        text: errorMessage,
+        showConfirmButton: false,
+        timer: 4000,
+        timerProgressBar: true,
+        background: '#fff',
+        color: '#dc2626',
+        iconColor: '#dc2626',
+      });
     } finally {
       setLoading(false)
     }
@@ -457,61 +571,119 @@ const Questionnaire = () => {
 
       setLeaderboard(response.data)
     } catch (error) {
-      console.log(error)
+      // Error handled (details not logged to prevent data exposure)
     }
   }
   const getCurrentQuestionLeaderboard = async () => {
-
+    if (!currentQuestion || !currentQuestion['id']) {
+      console.warn('No current question available for leaderboard');
+      setLeaderboard([]);
+      return;
+    }
 
     try {
       const response = await axios.get(`/currentQuestionLeaderboard/${id}/${currentQuestion['id']}`)
 
+      // Check if response has data
+      if (!response.data || !Array.isArray(response.data)) {
+        console.warn('Invalid leaderboard data received');
+        setLeaderboard([]);
+        return;
+      }
 
-      const formatted = response.data.map(item => ({
+      // Filter out duplicates by participant_id before mapping
+      const uniqueData = response.data.reduce((acc: any[], item: any) => {
+        const existing = acc.find((a: any) => a.participant_id === item.participant_id);
+        if (!existing) {
+          acc.push(item);
+        } else {
+          // Keep the one with higher points or more recent
+          if ((item.points || 0) > (existing.points || 0) || 
+              (item.created_at && existing.created_at && item.created_at > existing.created_at)) {
+            const index = acc.indexOf(existing);
+            acc[index] = item;
+          }
+        }
+        return acc;
+      }, []);
 
+      const formatted = uniqueData.map(item => ({
         lobby_id: item.lobby_id,
         question: item.question,
         question_id: item.question_id,
 
-        prev_answer: item.answer, // renamed from "answer"
+        // Ensure answer is displayed correctly - use empty string if null/undefined
+        prev_answer: item.answer || item.prev_answer || "",
         id: item.participant_id, // renamed from "participant_id"
         team: item.participant_name,
-        score: item.points, // renamed from "points"
+        score: item.points || 0, // renamed from "points"
 
-        prev_answer_correct: parseInt(item.points) > 0 ? 1 : 0 // added based on score
+        prev_answer_correct: parseInt(item.points || 0) > 0 ? 1 : 0 // added based on score
       }))
 
       setLeaderboard(formatted)
 
-      console.log(response.data)
+      // Response received (sensitive data excluded)
     } catch (error) {
-      console.log(error)
+      console.error('Error fetching leaderboard:', error);
+      setLeaderboard([]);
+      // Error handled (details not logged to prevent data exposure)
     }
   }
 
   const getParticipantShortAnswer = async () => {
     try {
-      const response = await axios.get(`/participant-shor-answer/${id}/${subject_id}`)
+      // Include current question_id in the request to filter answers for current question only
+      const questionId = currentQuestion ? currentQuestion['id'] : null;
+      const url = questionId 
+        ? `/participant-shor-answer/${id}/${subject_id}?question_id=${questionId}`
+        : `/participant-shor-answer/${id}/${subject_id}`;
+      
+      const response = await axios.get(url);
 
-      setParticapantShortAns(response.data)
+      setParticapantShortAns(response.data);
+
+      // No success message for auto-fetching - only show errors
 
     } catch (error) {
-      console.log(error)
+      // Error handled (details not logged to prevent data exposure)
+      // Only show error if it's a critical failure, not for silent polling
+      console.error('Error fetching participant answers:', error);
     }
   }
 
-  const handleSaveShortAnswer = (id, status) => {
+  const handleSaveShortAnswer = (participantId, status) => {
 
     setSaveShortAnswer(prev => {
-      const exists = prev.find(item => item.id === id);
+      const exists = prev.find(item => item.id === participantId);
+      const participantAnswer = particapantShortAns.find(p => p.id === participantId);
+      
+      // id from props is the lobby_id
+      const lobbyId = id; // This is the lobby_id from route params
+      
       if (exists) {
         // Update existing item
         return prev.map(item =>
-          item.id === id ? { ...item, status } : item
+          item.id === participantId ? { 
+            ...item, 
+            status,
+            question_id: currentQuestion ? currentQuestion['id'] : null,
+            lobby_id: lobbyId,
+            question: currentQuestion ? currentQuestion['question'] : '',
+            answer: participantAnswer?.prev_answer || ''
+          } : item
         );
       } else {
-        // Add new item
-        return [...prev, { id, status, points: currentQuestion['points'] }];
+        // Add new item with all required fields for points_history
+        return [...prev, { 
+          id: participantId, 
+          status, 
+          points: currentQuestion ? currentQuestion['points'] : 0,
+          question_id: currentQuestion ? currentQuestion['id'] : null,
+          lobby_id: lobbyId,
+          question: currentQuestion ? currentQuestion['question'] : '',
+          answer: participantAnswer?.prev_answer || ''
+        }];
       }
     });
   };
@@ -523,24 +695,36 @@ const Questionnaire = () => {
       const response = await axios.post('/participant-answer-update', formData)
 
       if (response.data == 1) {
+        setParticapantShortAns([]);
+        setSaveShortAnswer([]);
         Swal.fire({
           toast: true,
           position: 'top-end',
-          icon: 'info',
-          title: 'Answer Submitted.',
+          icon: 'success',
+          title: "Answers validated successfully",
+          text: 'Participant responses were saved for reporting.',
           showConfirmButton: false,
-          timer: 3000,
+          timer: 2500,
           timerProgressBar: true,
-          background: '#fff',
-          color: '#399918',
-          iconColor: '#399918 ',
         });
-        setParticapantShortAns([])
       }
     } catch (error) {
-      console.log(error)
+      // Error handled (details not logged to prevent data exposure)
+      Swal.fire({
+        icon: 'error',
+        title: 'Save Failed',
+        html: `
+          <div class="text-left">
+            <p class="mb-2">Failed to save participant answers.</p>
+            <p class="text-sm text-gray-600">Please try again or contact support if the problem persists.</p>
+          </div>
+        `,
+        confirmButtonColor: '#f97316',
+        confirmButtonText: 'OK',
+        allowOutsideClick: false,
+      });
     } finally {
-      setSavingShortAns(false)
+      setSavingShortAns(false);
     }
   }
   const handleGenerateReport = async () => {
@@ -609,15 +793,28 @@ const Questionnaire = () => {
           iconColor: '#dc3545',
         });
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error during report download:', error);
+      let errorMessage = 'An error occurred during download.';
+      
+      if (error.response) {
+        // Server responded with error status
+        errorMessage = error.response.data?.message || `Server error: ${error.response.status}`;
+      } else if (error.request) {
+        // Request was made but no response received
+        errorMessage = 'No response from server. Please check your connection.';
+      } else {
+        // Something else happened
+        errorMessage = error.message || 'An unexpected error occurred.';
+      }
+      
       Swal.fire({
         toast: true,
         position: 'top-end',
         icon: 'error',
-        title: 'An error occurred during download.',
+        title: errorMessage,
         showConfirmButton: false,
-        timer: 3000,
+        timer: 4000,
         timerProgressBar: true,
         background: '#fff',
         color: '#dc3545',
@@ -662,7 +859,7 @@ const Questionnaire = () => {
     try {
       const res = await axios.get(`/lobby-changeState/${id}/${selectedLevel}/${subject_id}`)
     } catch (error) {
-      console.log(error)
+      // Error handled (details not logged to prevent data exposure)
     }
 
 
@@ -672,9 +869,11 @@ const Questionnaire = () => {
     //   alert("Save Answer")
     // }
     if (state == 'leaderboard-revealed' || state == "finished") {
-
       getCurrentQuestionLeaderboard()
       setSelectedOption(null) // reset the selected answer
+    }
+    if (state == 'over-all-leaderboard') {
+      getLeaderboard()
     }
     if (state == 'event-closed') {
       router.get(`/lobby/${id}/${subject_id}/${team_id}`)
@@ -772,6 +971,37 @@ const Questionnaire = () => {
 
   }, [currentQuestion, seconds, state])
 
+  // Auto-fetch participant answers when modal is open (for short-answer questions)
+  useEffect(() => {
+    if (!auth?.user) return; // Only for organizers
+    if (!currentQuestion) return;
+    if (currentQuestion['type'] !== 'short-answer') return;
+    
+    // Auto-fetch when timer reaches 0 OR when modal is already open (has answers)
+    const shouldFetch = (state === 'timer-started' && seconds === 0) || particapantShortAns.length > 0;
+    
+    if (!shouldFetch) return;
+
+    // Initial fetch when conditions are met
+    getParticipantShortAnswer();
+
+    // Set up polling every 3 seconds when modal should be open
+    const pollInterval = setInterval(() => {
+      if (currentQuestion && 
+          currentQuestion['type'] === 'short-answer' && 
+          auth?.user) {
+        const shouldPoll = (state === 'timer-started' && seconds === 0) || particapantShortAns.length > 0;
+        if (shouldPoll) {
+          getParticipantShortAnswer();
+        }
+      }
+    }, 3000); // Poll every 3 seconds
+
+    return () => {
+      clearInterval(pollInterval);
+    };
+  }, [currentQuestion, auth?.user, state, seconds, particapantShortAns.length, id, subject_id])
+
   // useEffect(() => {
   //   if(!auth?.user && seconds == 0 && state=="timer-started"){
   //       alert("save answer")
@@ -819,7 +1049,7 @@ const Questionnaire = () => {
         setFinishedLevels(lf)
       }
     } catch (error) {
-      console.log(error)
+      // Error handled (details not logged to prevent data exposure)
     }
   }
 
@@ -835,6 +1065,18 @@ const Questionnaire = () => {
   const restricted_state = ["timer-started", "options-revealed", "over-all-leaderboard", "finished", "answer-revealed", "leaderboard-revealed"]
   const e_state = ["timer-started", "options-revealed", "answer-revealed",]
   const myLevels = ["easy", "average", "difficult"]
+  const isHost = Boolean(auth?.user);
+  const totalItems = Number(items) || 0;
+  const currentItemNumber = Number(itemNumber) || 0;
+  const isLastQuestion = totalItems > 0 ? currentItemNumber >= totalItems : false;
+  const showPostQuestionControls = isHost && (
+    state === "leaderboard-revealed" ||
+    (state === "over-all-leaderboard" && !isLastQuestion)
+  );
+  const canShowCloseEventActions = isHost && (
+    state === "finished" ||
+    (isLastQuestion && state === "over-all-leaderboard" && !e_state.includes(state))
+  );
   return (
     <div className="min-h-screen bg-yellow-200 pt-8 flex justify-center items-start">
       <div className="w-[80%] flex flex-col justify-center items-end gap-y-10">
@@ -1243,28 +1485,15 @@ const Questionnaire = () => {
 
               {currentQuestion && currentQuestion["options"] && (() => {
                 try {
-
+                  // Parse options for both participants and organizers
+                  const options = JSON.parse(currentQuestion["options"]);
+                  
                   if (!auth.user) {
-                    const options = JSON.parse(currentQuestion["options"]);
+                    // Participant view - interactive buttons
                     return options.map((option: any, index: number) => {
                       const isSelected = selectedOption?.text === option.text;
                       const isDisabled = !(state == "timer-started" && seconds > 0);
                       return (
-                        //         <Button
-                        //           disabled={isDisabled}
-                        //           key={index}
-                        //           onClick={() => submitAnswer(option)}
-                        //           className={`
-                        //   ${isSelected ? 'bg-green-600 shadow-orange-200' : isDisabled ? 'bg-orange-300' : 'bg-orange-500 hover:bg-orange-600'}
-                        //   text-white  rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 text-center text-4xl capitalize font-medium p-10
-                        //   ${isDisabled ? 'cursor-not-allowed opacity-75' : 'hover:scale-102'}
-                        //   w-full break-words whitespace-normal
-                        // `}
-                        //         >
-                        //           {option.text}
-
-                        //         </Button>
-
                         <Button
                           disabled={isDisabled}
                           key={index}
@@ -1282,7 +1511,7 @@ const Questionnaire = () => {
                               ? 'cursor-not-allowed opacity-75'
                               : 'hover:shadow-[inset_0_2px_6px_rgba(0,0,0,0.2),0_8px_20px_rgba(0,0,0,0.4)] active:shadow-[inset_0_4px_10px_rgba(0,0,0,0.3),0_2px_4px_rgba(0,0,0,0.3)] active:translate-y-1'}
     w-full break-words whitespace-normal border-2
-    drop-shadow-[0_2px_6px_rgba(0,0,0,0.3)]
+    drop-shadow-[0_2px_6px_rgba(0,0,0,0.2)]
     tracking-wide
   `}
                         >
@@ -1555,9 +1784,12 @@ const Questionnaire = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {/* {JSON.stringify(leaderboard)} */}
-                {leaderboard.map((rank, index) => (
-                  <TableRow key={rank.rank} className={`${rank.id == team_id ? "bg-orange-500/50 rounded-md hover:bg-orange-500/50" : "hover:bg-orange-200/50"}  transition-colors duration-200`}>
+                {/* Leaderboard data - sensitive information excluded */}
+                {leaderboard && leaderboard.length > 0 ? (
+                  leaderboard.filter((rank, index, self) => 
+                    index === self.findIndex((r) => r.id === rank.id)
+                  ).map((rank, index) => (
+                  <TableRow key={`${rank.id}-${rank.question_id || index}`} className={`${rank.id == team_id ? "bg-orange-500/50 rounded-md hover:bg-orange-500/50" : "hover:bg-orange-200/50"}  transition-colors duration-200`}>
                     <TableCell className="font-medium">
                       <div className='flex items-center gap-x-4'>
                         <div className="text-xl font-bold py-2 px-4 bg-gradient-to-r from-orange-500 to-orange-600 rounded-lg shadow-md shadow-orange-200">
@@ -1616,7 +1848,18 @@ const Questionnaire = () => {
                     }
 
                   </TableRow>
-                ))}
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-center py-8">
+                      <div className="flex flex-col items-center justify-center">
+                        <TrophyIcon className="w-12 h-12 text-orange-300 mb-4" />
+                        <p className="text-orange-600 text-lg font-semibold">No leaderboard data available yet</p>
+                        <p className="text-orange-500 text-sm mt-2">Waiting for participants to submit answers...</p>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                )}
               </TableBody>
             </Table>
           </div>
@@ -1626,18 +1869,22 @@ const Questionnaire = () => {
 
 
         {/* state == "finished" && auth?.user || itemNumber == items && auth?.user && state != "" && !e_state.includes(state)  */}
-        {
-          auth?.user && state == "finished" || itemNumber == items && auth?.user && state == "over-all-leaderboard" && !e_state.includes(state) ?
-            <div className=' w-full flex justify-center'>
-              {/* 
-          <Button onClick={() => handleGenerateReport()}>
-            <PrinterIcon />
-            Print Event Results</Button> */}
-              <Button className="bg-orange-600 hover:bg-orange-600/65 text-white text-2xl px-14 h-14" onClick={handleGenerateReport} disabled={savingShortAns}>
-                {savingShortAns ? 'Generating Report...' : 'Generate Excel Report'}
-              </Button>
-            </div> : ""
-        }
+        {canShowCloseEventActions && (
+          <div className=' w-full flex justify-center'>
+            <Button
+              className="bg-orange-600 hover:bg-orange-600/65 text-white text-2xl px-14 h-14 cursor-pointer"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleGenerateReport();
+              }}
+              disabled={savingShortAns}
+              type="button"
+            >
+              {savingShortAns ? 'Generating Report...' : 'Generate Excel Report'}
+            </Button>
+          </div>
+        )}
 
       </div>
 

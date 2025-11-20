@@ -1,0 +1,158 @@
+<?php
+
+namespace App\Exports;
+
+use App\Models\QuizManagement;
+use App\Models\User;
+use Carbon\Carbon;
+use Maatwebsite\Excel\Concerns\FromCollection;
+use Maatwebsite\Excel\Concerns\WithHeadings;
+use Maatwebsite\Excel\Concerns\WithMapping;
+use Maatwebsite\Excel\Concerns\WithStyles;
+use Maatwebsite\Excel\Concerns\WithEvents;
+use Maatwebsite\Excel\Concerns\ShouldAutoSize;
+use Maatwebsite\Excel\Concerns\WithCustomStartCell;
+use Maatwebsite\Excel\Events\AfterSheet;
+use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
+
+class QuizManagementExport implements FromCollection, WithHeadings, WithMapping, WithStyles, WithEvents, ShouldAutoSize, WithCustomStartCell
+{
+    private $userId;
+    private $lobbyId;
+
+    public function __construct($userId, $lobbyId = null)
+    {
+        $this->userId = $userId;
+        $this->lobbyId = $lobbyId;
+    }
+
+    public function startCell(): string
+    {
+        return 'A3';
+    }
+
+    public function collection()
+    {
+        $query = QuizManagement::with(['question.subject.lobby'])
+            ->where("user_id", $this->userId);
+        
+        if ($this->lobbyId) {
+            $query->whereHas('question.subject', function($q) {
+                $q->where('lobby_id', $this->lobbyId);
+            });
+        }
+        
+        return $query->orderBy('created_at', 'desc')->get();
+    }
+
+    public function headings(): array
+    {
+        return [
+            'User Name',
+            'Question Name',
+            'Question Type',
+            'Question Level',
+            'Action',
+            'Date & Time',
+        ];
+    }
+
+    public function map($log): array
+    {
+        $user = User::find($log->user_id);
+        $actionMap = [0 => 'Create', 1 => 'Edit', 2 => 'Delete'];
+        $action = $actionMap[$log->action] ?? 'Unknown';
+        $question = $log->question;
+        
+        return [
+            $user->name ?? 'Unknown',
+            $question->question ?? 'N/A',
+            $question->type ?? 'N/A',
+            $question->difficulty ?? 'N/A',
+            $action,
+            $log->created_at ? $log->created_at->format('m/d/Y g:i A') : 'N/A',
+        ];
+    }
+
+    public function styles(Worksheet $sheet)
+    {
+        $sheet->getStyle('A3:F3')->applyFromArray([
+            'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
+            'fill' => ['fillType' => 'solid', 'color' => ['rgb' => '800000']],
+            'alignment' => ['horizontal' => 'center', 'vertical' => 'center'],
+        ]);
+
+        return [];
+    }
+
+    public function registerEvents(): array
+    {
+        return [
+            AfterSheet::class => function (AfterSheet $event) {
+                $sheet = $event->sheet->getDelegate();
+
+                // Logo in column B (B1)
+                if (file_exists(public_path('images/school_logo.png'))) {
+                    $drawing = new \PhpOffice\PhpSpreadsheet\Worksheet\Drawing();
+                    $drawing->setPath(public_path('images/school_logo.png'));
+                    $drawing->setHeight(50);
+                    $drawing->setCoordinates('B1');
+                    $drawing->setOffsetX(5);
+                    $drawing->setWorksheet($sheet);
+                }
+
+                // University Name (Row 1)
+                $sheet->mergeCells('A1:F1');
+                $sheet->setCellValue('A1', 'Polytechnic University of the Philippines Taguig Campus');
+                $sheet->getStyle('A1')->getFont()->setItalic(true)->setSize(16);
+                $sheet->getStyle('A1')->getAlignment()->setHorizontal('center')->setVertical('center');
+
+                // Logo in column F (F1)
+                if (file_exists(public_path('images/LOGO.png'))) {
+                    $logo_right = new \PhpOffice\PhpSpreadsheet\Worksheet\Drawing();
+                    $logo_right->setPath(public_path('images/LOGO.png'));
+                    $logo_right->setHeight(50);
+                    $logo_right->setCoordinates('F1');
+                    $logo_right->setOffsetX(5);
+                    $logo_right->setWorksheet($sheet);
+                }
+
+                // Report Title (Row 2)
+                $sheet->mergeCells('A2:F2');
+                $sheet->setCellValue('A2', 'Quiz Management Logs Report');
+                $sheet->getStyle('A2')->getFont()->setBold(true)->setSize(20);
+                $sheet->getStyle('A2')->getAlignment()->setHorizontal('center')->setVertical('center');
+                $sheet->getRowDimension(2)->setRowHeight(50);
+
+                // Data Borders
+                $lastRow = $sheet->getHighestRow();
+                $sheet->getStyle("A3:F{$lastRow}")->applyFromArray([
+                    'borders' => [
+                        'allBorders' => [
+                            'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
+                            'color' => ['rgb' => '000000']
+                        ]
+                    ]
+                ]);
+
+                // Footer
+                $footerRow = $lastRow + 2;
+                $sheet->mergeCells("A{$footerRow}:F{$footerRow}");
+                $sheet->setCellValue("A{$footerRow}", 'Generated by: PUPT Quiz Bee Management System | Date: ' . Carbon::now('Asia/Manila')->format('Y-m-d'));
+                $sheet->getStyle("A{$footerRow}")->getFont()->setItalic(true)->setSize(11);
+                $sheet->getStyle("A{$footerRow}")->getAlignment()->setHorizontal('center');
+
+                // Auto column width
+                foreach (range('A', 'F') as $col) {
+                    $sheet->getColumnDimension($col)->setAutoSize(true);
+                }
+
+                // Row heights
+                $sheet->getRowDimension('1')->setRowHeight(40);
+                $sheet->getRowDimension('2')->setRowHeight(25);
+                $sheet->getRowDimension('3')->setRowHeight(25);
+            },
+        ];
+    }
+}
+

@@ -10,17 +10,13 @@ export default defineConfig({
         }),
         react(),
     ],
-    
-// server: {
-//         host: '0.0.0.0',
-//         port: 5173,
-//         strictPort: true,
-//         cors: {
-//             origin: 'http://192.168.68.129:8000', // Allow Laravel's origin
-//             credentials: true,
-//         },
-//         watch: {
-//             usePolling: true,
-//         },
-//     },
+    server: {
+        host: 'localhost',
+        port: 5173,
+        strictPort: true,
+        hmr: {
+            host: 'localhost',
+            protocol: 'ws',
+        },
+    },
 });

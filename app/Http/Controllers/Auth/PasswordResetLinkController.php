@@ -33,19 +33,40 @@ class PasswordResetLinkController extends Controller
             'email' => 'required|email',
         ]);
 
-        // We will send the password reset link to this user. Once we have attempted
-        // to send the link, we will examine the response then see the message we
-        // need to show to the user. Finally, we'll send out a proper response.
-        $status = Password::sendResetLink(
-            $request->only('email')
-        );
+        try {
+            // We will send the password reset link to this user. Once we have attempted
+            // to send the link, we will examine the response then see the message we
+            // need to show to the user. Finally, we'll send out a proper response.
+            $status = Password::broker('users')->sendResetLink(
+                $request->only('email')
+            );
 
-        if ($status == Password::RESET_LINK_SENT) {
-            return back()->with('status', __($status));
+            if ($status == Password::RESET_LINK_SENT) {
+                return back()->with('status', __($status));
+            }
+
+            // Log the error for debugging (but don't expose sensitive info to user)
+            \Log::error('Password reset link failed', [
+                'email' => $request->email,
+                'status' => $status,
+            ]);
+
+            throw ValidationException::withMessages([
+                'email' => [trans($status)],
+            ]);
+        } catch (\Exception $e) {
+            // Log the exception
+            \Log::error('Password reset exception', [
+                'email' => $request->email,
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ]);
+
+            // Return user-friendly error message
+            throw ValidationException::withMessages([
+                'email' => ['We were unable to send the password reset link. Please try again later or contact support.'],
+            ]);
         }
-
-        throw ValidationException::withMessages([
-            'email' => [trans($status)],
-        ]);
     }
 }

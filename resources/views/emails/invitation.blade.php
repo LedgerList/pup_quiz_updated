@@ -82,7 +82,7 @@
         }
 
         .company-logo::before {
-            content: url('/images/school_logo.png');
+            content: url('/images/LOGO.png');
             font-size: 32px;
             color: white;
         }
@@ -251,7 +251,7 @@
             <div class="logo-section">
                 <div class="company-logo">
 
-                    <img src="{{ asset('images/school_logo.png') }}" alt="App Logo" style="width: 100%; height:100%;">
+                    <img src="{{ asset('images/LOGO.png') }}" alt="App Logo" style="width: 100%; height:100%;">
                 </div>
                 <h1>{{ $subject_line }}</h1>
                 <div class="header-subtitle">PUPT QUIZ</div>

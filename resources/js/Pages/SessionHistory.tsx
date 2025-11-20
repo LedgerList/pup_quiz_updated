@@ -12,7 +12,8 @@ const SessionHistory = (props: Props) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterActive, setFilterActive] = useState('all');
 
-  const sessionData = logs
+  // Ensure logs is an array, default to empty array if undefined/null
+  const sessionData = Array.isArray(logs) ? logs : []
   const formatDateTime = (timestamp) => {
     if (!timestamp) return 'Active Session';
     const date = new Date(timestamp);
@@ -54,8 +55,23 @@ const SessionHistory = (props: Props) => {
   };
 
   const filteredData = sessionData.filter(session => {
-    const matchesSearch = session.id.toString().includes(searchTerm) ||
-      session.ip_address.includes(searchTerm);
+    if (!session || !session.id) return false;
+
+    // Students see only their own sessions
+    if (auth?.user?.role === 2 && session.user_id !== auth?.user?.id) {
+      return false;
+    }
+
+    // Teachers see only their own unless they are organizers
+    if (auth?.user?.role === 1 && session.user_id !== auth?.user?.id) {
+      return false;
+    }
+
+    const sessionId = session.id?.toString() || '';
+    const ipAddress = session.ip_address || '';
+    
+    const matchesSearch = sessionId.includes(searchTerm) ||
+      ipAddress.includes(searchTerm);
 
     if (filterActive === 'all') return matchesSearch;
     if (filterActive === 'active') return matchesSearch && !session.logout_timestamp;
@@ -89,10 +105,22 @@ const SessionHistory = (props: Props) => {
               </h1>
               <p className="text-gray-600">Monitor and track user session activity</p>
             </div>
-            <div onClick={()=> router.get("/organizerLobby")}  className='bg-red-500 text-white p-4 flex gap-x-3 rounded-md hover:bg-red-700 hover:cursor-pointer'>
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (auth?.user?.role === 3) {
+                  router.get("/organizerLobby");
+                } else {
+                  router.get("/dashboard");
+                }
+              }}
+              className='bg-red-500 text-white p-4 flex gap-x-3 rounded-md hover:bg-red-700 hover:cursor-pointer'
+              type="button"
+            >
               <LayoutDashboardIcon />
               <p>Go to Dashboard</p>
-            </div>
+            </button>
 
           </div>
 
@@ -110,47 +138,51 @@ const SessionHistory = (props: Props) => {
               </div>
             </div>
 
-            <div className="bg-white rounded-xl shadow-lg border-l-4 border-green-500 p-6 hover:shadow-xl transition-shadow duration-300">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Active Sessions</p>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {sessionData.filter(s => !s.logout_timestamp).length}
-                  </p>
+            {auth?.user?.role === 3 && (
+              <>
+                <div className="bg-white rounded-xl shadow-lg border-l-4 border-green-500 p-6 hover:shadow-xl transition-shadow duration-300">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-gray-600">Active Sessions</p>
+                      <p className="text-2xl font-bold text-gray-900">
+                        {sessionData.filter(s => !s.logout_timestamp).length}
+                      </p>
+                    </div>
+                    <div className="p-3 bg-green-100 rounded-full">
+                      <Clock className="w-6 h-6 text-green-600" />
+                    </div>
+                  </div>
                 </div>
-                <div className="p-3 bg-green-100 rounded-full">
-                  <Clock className="w-6 h-6 text-green-600" />
-                </div>
-              </div>
-            </div>
 
-            <div className="bg-white rounded-xl shadow-lg border-l-4 border-amber-500 p-6 hover:shadow-xl transition-shadow duration-300">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Unique Users</p>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {new Set(sessionData.map(s => s.user_id)).size}
-                  </p>
+                <div className="bg-white rounded-xl shadow-lg border-l-4 border-amber-500 p-6 hover:shadow-xl transition-shadow duration-300">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-gray-600">Unique Users</p>
+                      <p className="text-2xl font-bold text-gray-900">
+                        {new Set(sessionData.map(s => s.user_id)).size}
+                      </p>
+                    </div>
+                    <div className="p-3 bg-amber-100 rounded-full">
+                      <User className="w-6 h-6 text-amber-600" />
+                    </div>
+                  </div>
                 </div>
-                <div className="p-3 bg-amber-100 rounded-full">
-                  <User className="w-6 h-6 text-amber-600" />
-                </div>
-              </div>
-            </div>
 
-            <div className="bg-white rounded-xl shadow-lg border-l-4 border-red-500 p-6 hover:shadow-xl transition-shadow duration-300">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Ended Sessions</p>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {sessionData.filter(s => s.logout_timestamp).length}
-                  </p>
+                <div className="bg-white rounded-xl shadow-lg border-l-4 border-red-500 p-6 hover:shadow-xl transition-shadow duration-300">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-gray-600">Ended Sessions</p>
+                      <p className="text-2xl font-bold text-gray-900">
+                        {sessionData.filter(s => s.logout_timestamp).length}
+                      </p>
+                    </div>
+                    <div className="p-3 bg-red-100 rounded-full">
+                      <MapPin className="w-6 h-6 text-red-600" />
+                    </div>
+                  </div>
                 </div>
-                <div className="p-3 bg-red-100 rounded-full">
-                  <MapPin className="w-6 h-6 text-red-600" />
-                </div>
-              </div>
-            </div>
+              </>
+            )}
           </div>
 
           {/* Controls */}
@@ -189,7 +221,7 @@ const SessionHistory = (props: Props) => {
                 <thead className="bg-gradient-to-r from-red-500 to-amber-500">
                   <tr>
                     <th className="px-6 py-4 text-left text-sm font-semibold text-white">Session ID</th>
-                    <th className="px-6 py-4 text-left text-sm font-semibold text-white">User ID</th>
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-white">User</th>
                     <th className="px-6 py-4 text-left text-sm font-semibold text-white">Status</th>
                     <th className="px-6 py-4 text-left text-sm font-semibold text-white">IP Address</th>
                     <th className="px-6 py-4 text-left text-sm font-semibold text-white">Started</th>
@@ -215,7 +247,7 @@ const SessionHistory = (props: Props) => {
                       <td className="px-6 py-4">
                         <div className="flex items-center">
                           <User className="w-4 h-4 text-gray-400 mr-2" />
-                          <span className="text-gray-900 font-medium">{auth.user.name}</span>
+                          <span className="text-gray-900 font-medium">{session.user_name || `User ID: ${session.user_id || 'N/A'}`}</span>
                         </div>
                       </td>
                       <td className="px-6 py-4">

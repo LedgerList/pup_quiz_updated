@@ -84,7 +84,41 @@ export default function PreRegistrationForm() {
         field: keyof typeof formDataDoc
     ) => {
         const file = e.target.files?.[0];
-        if (file) setFormDataDoc({ ...formDataDoc, [field]: file });
+        if (file) {
+            // Check file size (2MB = 2 * 1024 * 1024 bytes)
+            const maxSize = 2 * 1024 * 1024; // 2MB
+            if (file.size > maxSize) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'File Too Large',
+                    html: `
+                        <div class="text-left">
+                            <p class="mb-2">The file <strong>${file.name}</strong> exceeds the maximum size limit.</p>
+                            <p class="text-sm text-gray-600">Maximum file size: <strong>2MB</strong></p>
+                            <p class="text-sm text-gray-600">Your file size: <strong>${(file.size / 1024 / 1024).toFixed(2)}MB</strong></p>
+                        </div>
+                    `,
+                    confirmButtonColor: '#f97316',
+                    confirmButtonText: 'OK',
+                    allowOutsideClick: false,
+                });
+                // Reset the input
+                e.target.value = '';
+                return;
+            }
+            setFormDataDoc({ ...formDataDoc, [field]: file });
+            
+            // Show success alert
+            Swal.fire({
+                icon: 'success',
+                title: 'File Uploaded',
+                text: `${file.name} has been uploaded successfully.`,
+                timer: 2000,
+                showConfirmButton: false,
+                toast: true,
+                position: 'top-end',
+            });
+        }
     };
 
     const handleDrop = (
@@ -93,7 +127,39 @@ export default function PreRegistrationForm() {
     ) => {
         e.preventDefault();
         const file = e.dataTransfer.files[0];
-        if (file) setFormDataDoc({ ...formDataDoc, [field]: file });
+        if (file) {
+            // Check file size (2MB = 2 * 1024 * 1024 bytes)
+            const maxSize = 2 * 1024 * 1024; // 2MB
+            if (file.size > maxSize) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'File Too Large',
+                    html: `
+                        <div class="text-left">
+                            <p class="mb-2">The file <strong>${file.name}</strong> exceeds the maximum size limit.</p>
+                            <p class="text-sm text-gray-600">Maximum file size: <strong>2MB</strong></p>
+                            <p class="text-sm text-gray-600">Your file size: <strong>${(file.size / 1024 / 1024).toFixed(2)}MB</strong></p>
+                        </div>
+                    `,
+                    confirmButtonColor: '#f97316',
+                    confirmButtonText: 'OK',
+                    allowOutsideClick: false,
+                });
+                return;
+            }
+            setFormDataDoc({ ...formDataDoc, [field]: file });
+            
+            // Show success alert
+            Swal.fire({
+                icon: 'success',
+                title: 'File Uploaded',
+                text: `${file.name} has been uploaded successfully.`,
+                timer: 2000,
+                showConfirmButton: false,
+                toast: true,
+                position: 'top-end',
+            });
+        }
     };
 
     const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
@@ -104,8 +170,11 @@ export default function PreRegistrationForm() {
         setFormDataDoc({ ...formDataDoc, [e.target.name]: e.target.checked });
     };
     const handleSubmit = async () => {
-        //         alert(JSON.stringify(formData.signedConsentForm))
-        // return
+        // Prevent duplicate submissions
+        if (isSubmitting) {
+            return;
+        }
+
         const { studentId, consentForm, registrationForm, certification } = formDataDoc;
 
         // Check if any file is missing or certification is false
@@ -117,9 +186,19 @@ export default function PreRegistrationForm() {
         if (!isValid) {
             Swal.fire({
                 icon: "error",
-                title: "Error",
-                text: "Team Leader Documents is required",
+                title: "Missing Documents",
+                html: `
+                    <div class="text-left">
+                        <p class="mb-2">Team Leader documents are required.</p>
+                        <p class="text-sm text-gray-600">Please upload:</p>
+                        <ul class="text-sm text-gray-600 list-disc list-inside mt-2">
+                            <li>Valid Student's ID</li>
+                            <li>Certificate of Registration Form</li>
+                        </ul>
+                    </div>
+                `,
                 confirmButtonColor: "#f97316",
+                allowOutsideClick: false,
             });
             return;
         }
@@ -134,19 +213,71 @@ export default function PreRegistrationForm() {
         if (!allMembersValid) {
             Swal.fire({
                 icon: "error",
-                title: "Error",
-                text: "All fields is required",
+                title: "Incomplete Information",
+                html: `
+                    <div class="text-left">
+                        <p class="mb-2">All fields are required for each team member.</p>
+                        <p class="text-sm text-gray-600">Please ensure:</p>
+                        <ul class="text-sm text-gray-600 list-disc list-inside mt-2">
+                            <li>Name is filled</li>
+                            <li>Student Number is filled</li>
+                            <li>Course & Year is filled</li>
+                            <li>All required documents are uploaded</li>
+                        </ul>
+                    </div>
+                `,
                 confirmButtonColor: "#f97316",
+                allowOutsideClick: false,
             });
             return;
         }
         if (!csrfToken) {
-            console.error("CSRF token not found");
+            Swal.fire({
+                icon: "error",
+                title: "Security Error",
+                text: "CSRF token not found. Please refresh the page.",
+                confirmButtonColor: "#f97316",
+                allowOutsideClick: false,
+            });
             return;
         }
 
-        // setIsSubmitting(true);
-        // setSubmitError("");
+        // Show confirmation modal before submission
+        const confirmResult = await Swal.fire({
+            icon: 'question',
+            title: 'Confirm Registration',
+            html: `
+                <div class="text-left">
+                    <p class="mb-3">Are you sure you want to submit your registration?</p>
+                    <p class="text-sm text-gray-600">Please review all information before proceeding.</p>
+                </div>
+            `,
+            showCancelButton: true,
+            confirmButtonColor: '#f97316',
+            cancelButtonColor: '#6b7280',
+            confirmButtonText: 'Yes, Submit',
+            cancelButtonText: 'Cancel',
+            allowOutsideClick: false,
+        });
+
+        if (!confirmResult.isConfirmed) {
+            return;
+        }
+
+        setIsSubmitting(true);
+        setSubmitError("");
+
+        // Show loading modal
+        Swal.fire({
+            title: 'Processing Registration',
+            html: 'Please wait while we process your registration...',
+            allowOutsideClick: false,
+            allowEscapeKey: false,
+            showConfirmButton: false,
+            didOpen: () => {
+                Swal.showLoading();
+            }
+        });
 
         try {
             const formDataToSend = new FormData();
@@ -206,26 +337,79 @@ export default function PreRegistrationForm() {
             const data = await response.json();
 
             if (response.ok) {
+                // Close loading modal
+                Swal.close();
+                
+                // Show success modal
+                await Swal.fire({
+                    icon: "success",
+                    title: "Registration Successful!",
+                    html: `
+                        <div class="text-left">
+                            <p class="mb-2">Your team has been registered successfully!</p>
+                            <p class="text-sm text-gray-600">You will receive a confirmation email shortly.</p>
+                        </div>
+                    `,
+                    confirmButtonColor: "#f97316",
+                    allowOutsideClick: false,
+                });
+                
                 setParticipantId(data.user.id);
+                setSubmitSuccess(true);
                 setCurrentStep(7);
             } else {
-                console.error(data);
-                Swal.fire({
-                    icon: "error",
-                    title: "Error",
-                    text: data.message || "Failed to create team",
-                    confirmButtonColor: "#f97316",
-                });
+                // Close loading modal
+                Swal.close();
+                
+                // Check for duplicate registration error (409 Conflict)
+                if (response.status === 409) {
+                    Swal.fire({
+                        icon: "warning",
+                        title: "Already Registered",
+                        html: `
+                            <div class="text-left">
+                                <p class="mb-2">${data.message || "You have already registered for this event."}</p>
+                                <p class="text-sm text-gray-600">${data.error || "Each email address and student number can only register once."}</p>
+                            </div>
+                        `,
+                        confirmButtonColor: "#f97316",
+                        allowOutsideClick: false,
+                    });
+                } else {
+                    // Show error modal with details
+                    let errorMessage = data.message || "Failed to create team";
+                    if (data.errors) {
+                        const errorList = Object.values(data.errors).flat().join('<br>');
+                        errorMessage = `<div class="text-left"><p class="mb-2">${data.message || "Validation errors occurred:"}</p><p class="text-sm text-gray-600">${errorList}</p></div>`;
+                    }
+                    
+                    Swal.fire({
+                        icon: "error",
+                        title: "Registration Failed",
+                        html: errorMessage,
+                        confirmButtonColor: "#f97316",
+                        allowOutsideClick: false,
+                    });
+                }
             }
-
-            setSubmitSuccess(true);
         } catch (error: any) {
             console.error("Error:", error);
+            
+            // Close loading modal
+            Swal.close();
+            
+            // Show error modal
             Swal.fire({
                 icon: "error",
-                title: "Error",
-                text: "An error occurred while creating the team. Please try again.",
+                title: "Registration Error",
+                html: `
+                    <div class="text-left">
+                        <p class="mb-2">An error occurred while processing your registration.</p>
+                        <p class="text-sm text-gray-600">${error.message || "Please try again later."}</p>
+                    </div>
+                `,
                 confirmButtonColor: "#f97316",
+                allowOutsideClick: false,
             });
             setSubmitError(error.message || "An error occurred. Please try again.");
         } finally {
@@ -886,9 +1070,41 @@ export default function PreRegistrationForm() {
     const handleFileUpload = (e, fileType) => {
         const file = e.target.files[0];
         if (file && selectedMemberIndex !== null) {
+            // Check file size (2MB = 2 * 1024 * 1024 bytes)
+            const maxSize = 2 * 1024 * 1024; // 2MB
+            if (file.size > maxSize) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'File Too Large',
+                    html: `
+                        <div class="text-left">
+                            <p class="mb-2">The file <strong>${file.name}</strong> exceeds the maximum size limit.</p>
+                            <p class="text-sm text-gray-600">Maximum file size: <strong>2MB</strong></p>
+                            <p class="text-sm text-gray-600">Your file size: <strong>${(file.size / 1024 / 1024).toFixed(2)}MB</strong></p>
+                        </div>
+                    `,
+                    confirmButtonColor: '#f97316',
+                    confirmButtonText: 'OK',
+                    allowOutsideClick: false,
+                });
+                // Reset the input
+                e.target.value = '';
+                return;
+            }
             const newMembers = [...formData.members];
             newMembers[selectedMemberIndex].requirements[fileType] = file;
             setFormData(prev => ({ ...prev, members: newMembers }));
+            
+            // Show success alert
+            Swal.fire({
+                icon: 'success',
+                title: 'File Uploaded',
+                text: `${file.name} has been uploaded successfully.`,
+                timer: 2000,
+                showConfirmButton: false,
+                toast: true,
+                position: 'top-end',
+            });
         }
     };
 
@@ -897,9 +1113,32 @@ export default function PreRegistrationForm() {
 
     const removeFile = (fileType) => {
         if (selectedMemberIndex !== null) {
-            const newMembers = [...formData.members];
-            newMembers[selectedMemberIndex].requirements[fileType] = null;
-            setFormData(prev => ({ ...prev, members: newMembers }));
+            Swal.fire({
+                icon: 'question',
+                title: 'Remove File?',
+                text: 'Are you sure you want to remove this file?',
+                showCancelButton: true,
+                confirmButtonColor: '#f97316',
+                cancelButtonColor: '#6b7280',
+                confirmButtonText: 'Yes, Remove',
+                cancelButtonText: 'Cancel',
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    const newMembers = [...formData.members];
+                    newMembers[selectedMemberIndex].requirements[fileType] = null;
+                    setFormData(prev => ({ ...prev, members: newMembers }));
+                    
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'File Removed',
+                        text: 'The file has been removed successfully.',
+                        timer: 1500,
+                        showConfirmButton: false,
+                        toast: true,
+                        position: 'top-end',
+                    });
+                }
+            });
         }
     };
 
@@ -912,9 +1151,40 @@ export default function PreRegistrationForm() {
         const file = e.dataTransfer.files[0];
         if (!file) return;
 
+        // Check file size (2MB = 2 * 1024 * 1024 bytes)
+        const maxSize = 2 * 1024 * 1024; // 2MB
+        if (file.size > maxSize) {
+            Swal.fire({
+                icon: 'error',
+                title: 'File Too Large',
+                html: `
+                    <div class="text-left">
+                        <p class="mb-2">The file <strong>${file.name}</strong> exceeds the maximum size limit.</p>
+                        <p class="text-sm text-gray-600">Maximum file size: <strong>2MB</strong></p>
+                        <p class="text-sm text-gray-600">Your file size: <strong>${(file.size / 1024 / 1024).toFixed(2)}MB</strong></p>
+                    </div>
+                `,
+                confirmButtonColor: '#f97316',
+                confirmButtonText: 'OK',
+                allowOutsideClick: false,
+            });
+            return;
+        }
+
         const newMembers = [...formData.members];
         newMembers[memberIndex].requirements[field] = file;
         setFormData(prev => ({ ...prev, members: newMembers }));
+        
+        // Show success alert
+        Swal.fire({
+            icon: 'success',
+            title: 'File Uploaded',
+            text: `${file.name} has been uploaded successfully.`,
+            timer: 2000,
+            showConfirmButton: false,
+            toast: true,
+            position: 'top-end',
+        });
     };
 
     return (
@@ -1042,7 +1312,15 @@ export default function PreRegistrationForm() {
                                     >
                                         {currentStep === steps.length - 1 && !isSubmitting ? 'Submit' : !isSubmitting ? 'Next' : ""}
 
-                                        {isSubmitting && currentStep === steps.length - 1 ? 'Submitting...' : ''}
+                                        {isSubmitting && currentStep === steps.length - 1 ? (
+                                            <>
+                                                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                                </svg>
+                                                Submitting...
+                                            </>
+                                        ) : ''}
                                         {currentStep < steps.length - 1 && <ChevronRight className="w-4 h-4 ml-1" />}
                                     </button>
                                 </div>
@@ -1113,7 +1391,7 @@ export default function PreRegistrationForm() {
                                                                     <Upload className="w-6 h-6 text-gray-400" />
                                                                 </div>
                                                                 <p className="text-sm text-gray-600">Click to upload or drag and drop</p>
-                                                                <p className="text-xs text-gray-500 mt-1">PDF, PNG, JPG up to 10MB</p>
+                                                                <p className="text-xs text-gray-500 mt-1">PDF, PNG, JPG up to 2MB</p>
                                                             </div>
                                                             <input
                                                                 type="file"
@@ -1157,7 +1435,7 @@ export default function PreRegistrationForm() {
                                                                     <Upload className="w-6 h-6 text-gray-400" />
                                                                 </div>
                                                                 <p className="text-sm text-gray-600">Click to upload or drag and drop</p>
-                                                                <p className="text-xs text-gray-500 mt-1">PDF, PNG, JPG up to 10MB</p>
+                                                                <p className="text-xs text-gray-500 mt-1">PDF, PNG, JPG up to 2MB</p>
                                                             </div>
                                                             <input
                                                                 type="file"
@@ -1201,7 +1479,7 @@ export default function PreRegistrationForm() {
                                                                     <Upload className="w-6 h-6 text-gray-400" />
                                                                 </div>
                                                                 <p className="text-sm text-gray-600">Click to upload or drag and drop</p>
-                                                                <p className="text-xs text-gray-500 mt-1">PDF, PNG, JPG up to 10MB</p>
+                                                                <p className="text-xs text-gray-500 mt-1">PDF, PNG, JPG up to 2MB</p>
                                                             </div>
                                                             <input
                                                                 type="file"
@@ -1273,10 +1551,34 @@ export default function PreRegistrationForm() {
 
                                                         </div>
                                                         <button
-                                                            onClick={() => setFormDataDoc(prev => ({
-                                                                ...prev,
-                                                                studentId: null
-                                                            }))}
+                                                            onClick={() => {
+                                                                Swal.fire({
+                                                                    icon: 'question',
+                                                                    title: 'Remove File?',
+                                                                    text: 'Are you sure you want to remove this file?',
+                                                                    showCancelButton: true,
+                                                                    confirmButtonColor: '#f97316',
+                                                                    cancelButtonColor: '#6b7280',
+                                                                    confirmButtonText: 'Yes, Remove',
+                                                                    cancelButtonText: 'Cancel',
+                                                                }).then((result) => {
+                                                                    if (result.isConfirmed) {
+                                                                        setFormDataDoc(prev => ({
+                                                                            ...prev,
+                                                                            studentId: null
+                                                                        }));
+                                                                        Swal.fire({
+                                                                            icon: 'success',
+                                                                            title: 'File Removed',
+                                                                            text: 'The file has been removed successfully.',
+                                                                            timer: 1500,
+                                                                            showConfirmButton: false,
+                                                                            toast: true,
+                                                                            position: 'top-end',
+                                                                        });
+                                                                    }
+                                                                });
+                                                            }}
                                                             className="text-red-600 hover:text-red-800 text-sm"
                                                         >
                                                             Remove
@@ -1291,7 +1593,7 @@ export default function PreRegistrationForm() {
                                                                     <Upload className="w-6 h-6 text-gray-400" />
                                                                 </div>
                                                                 <p className="text-sm text-gray-600">Click to upload or drag and drop</p>
-                                                                <p className="text-xs text-gray-500 mt-1">PDF, PNG, JPG up to 10MB</p>
+                                                                <p className="text-xs text-gray-500 mt-1">PDF, PNG, JPG up to 2MB</p>
                                                             </div>
                                                             <input
                                                                 type="file"
@@ -1321,10 +1623,34 @@ export default function PreRegistrationForm() {
 
                                                         </div>
                                                         <button
-                                                            onClick={() => setFormDataDoc(prev => ({
-                                                                ...prev,
-                                                                registrationForm: null
-                                                            }))}
+                                                            onClick={() => {
+                                                                Swal.fire({
+                                                                    icon: 'question',
+                                                                    title: 'Remove File?',
+                                                                    text: 'Are you sure you want to remove this file?',
+                                                                    showCancelButton: true,
+                                                                    confirmButtonColor: '#f97316',
+                                                                    cancelButtonColor: '#6b7280',
+                                                                    confirmButtonText: 'Yes, Remove',
+                                                                    cancelButtonText: 'Cancel',
+                                                                }).then((result) => {
+                                                                    if (result.isConfirmed) {
+                                                                        setFormDataDoc(prev => ({
+                                                                            ...prev,
+                                                                            registrationForm: null
+                                                                        }));
+                                                                        Swal.fire({
+                                                                            icon: 'success',
+                                                                            title: 'File Removed',
+                                                                            text: 'The file has been removed successfully.',
+                                                                            timer: 1500,
+                                                                            showConfirmButton: false,
+                                                                            toast: true,
+                                                                            position: 'top-end',
+                                                                        });
+                                                                    }
+                                                                });
+                                                            }}
                                                             className="text-red-600 hover:text-red-800 text-sm"
                                                         >
                                                             Remove
@@ -1339,7 +1665,7 @@ export default function PreRegistrationForm() {
                                                                     <Upload className="w-6 h-6 text-gray-400" />
                                                                 </div>
                                                                 <p className="text-sm text-gray-600">Click to upload or drag and drop</p>
-                                                                <p className="text-xs text-gray-500 mt-1">PDF, PNG, JPG up to 10MB</p>
+                                                                <p className="text-xs text-gray-500 mt-1">PDF, PNG, JPG up to 2MB</p>
                                                             </div>
                                                             <input
                                                                 type="file"
@@ -1369,10 +1695,34 @@ export default function PreRegistrationForm() {
 
                                                         </div>
                                                         <button
-                                                            onClick={() => setFormDataDoc(prev => ({
-                                                                ...prev,
-                                                                consentForm: null
-                                                            }))}
+                                                            onClick={() => {
+                                                                Swal.fire({
+                                                                    icon: 'question',
+                                                                    title: 'Remove File?',
+                                                                    text: 'Are you sure you want to remove this file?',
+                                                                    showCancelButton: true,
+                                                                    confirmButtonColor: '#f97316',
+                                                                    cancelButtonColor: '#6b7280',
+                                                                    confirmButtonText: 'Yes, Remove',
+                                                                    cancelButtonText: 'Cancel',
+                                                                }).then((result) => {
+                                                                    if (result.isConfirmed) {
+                                                                        setFormDataDoc(prev => ({
+                                                                            ...prev,
+                                                                            consentForm: null
+                                                                        }));
+                                                                        Swal.fire({
+                                                                            icon: 'success',
+                                                                            title: 'File Removed',
+                                                                            text: 'The file has been removed successfully.',
+                                                                            timer: 1500,
+                                                                            showConfirmButton: false,
+                                                                            toast: true,
+                                                                            position: 'top-end',
+                                                                        });
+                                                                    }
+                                                                });
+                                                            }}
                                                             className="text-red-600 hover:text-red-800 text-sm"
                                                         >
                                                             Remove
@@ -1387,7 +1737,7 @@ export default function PreRegistrationForm() {
                                                                     <Upload className="w-6 h-6 text-gray-400" />
                                                                 </div>
                                                                 <p className="text-sm text-gray-600">Click to upload or drag and drop</p>
-                                                                <p className="text-xs text-gray-500 mt-1">PDF, PNG, JPG up to 10MB</p>
+                                                                <p className="text-xs text-gray-500 mt-1">PDF, PNG, JPG up to 2MB</p>
                                                             </div>
                                                             <input
                                                                 type="file"

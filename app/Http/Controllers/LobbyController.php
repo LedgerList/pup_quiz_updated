@@ -73,8 +73,7 @@ class LobbyController extends Controller
         // Load questions
 
         $questions = Subjects::with(['subjectsQuestions' => function ($query) use ($lobby) {
-            $query->where('difficulty', $lobby->current_level)
-                ->where("archive", 0);
+            $query->where('difficulty', $lobby->current_level);
         }])
             ->where('id', $subject_id)
             ->firstOrFail();
@@ -95,9 +94,12 @@ class LobbyController extends Controller
 
     public function getOrganizerLobby()
     {
-
-
-        return Lobby::where('user_id', Auth::user()->id)->where("archive", 0)->get();
+        // Get lobbies with their subjects for the authenticated user
+        // This works for both Organizers (role 3) and Teachers (role 1)
+        return Lobby::with('subjects')
+            ->where('user_id', Auth::user()->id)
+            ->where("archive", 0)
+            ->get();
     }
     public function lobbyStatus($id)
     {
@@ -157,15 +159,22 @@ class LobbyController extends Controller
         // Load questions
 
         $questions = Subjects::with(['subjectsQuestions' => function ($query) use ($lobby) {
-            $query->where('difficulty', $lobby->current_level)
-                ->where("archive", 0);
+            $query->where('difficulty', $lobby->current_level);
         }])
             ->where('id', $subject_id)
             ->firstOrFail();
 
         // Use question_num to get current question (1-based index -> 0-based array)
         $current_question_index = $lobby->question_num - 1;
-        $current_question = $questions->subjectsQuestions[0] ?? $questions->subjectsQuestions[0];
+        
+        // Get the questions collection and safely access the current question
+        $subjectsQuestions = $questions->subjectsQuestions;
+        
+        if ($subjectsQuestions->isEmpty() || $current_question_index < 0 || $current_question_index >= $subjectsQuestions->count()) {
+            return response()->json(['error' => 'Question not found'], 404);
+        }
+        
+        $current_question = $subjectsQuestions[$current_question_index];
 
         // Broadcast the current question
         broadcast(new QuizEvent('timer-started', $current_question, $lobby->question_num, $id, $lobby->current_level));
@@ -187,8 +196,7 @@ class LobbyController extends Controller
         // Load questions
 
         $questions = Subjects::with(['subjectsQuestions' => function ($query) use ($lobby) {
-            $query->where('difficulty', $lobby->current_level)
-                ->where("archive", 0);
+            $query->where('difficulty', $lobby->current_level);
         }])
             ->where('id', $subject_id)
             ->firstOrFail();
@@ -196,7 +204,14 @@ class LobbyController extends Controller
         // Use question_num to get current question (1-based index -> 0-based array)
         $current_question_index = $lobby->question_num - 1;
 
-        $current_question = $questions->subjectsQuestions[0] ?? $questions->subjectsQuestions[0];
+        // Get the questions collection and safely access the current question
+        $subjectsQuestions = $questions->subjectsQuestions;
+        
+        if ($subjectsQuestions->isEmpty() || !isset($subjectsQuestions[$current_question_index])) {
+            return response()->json(['error' => 'Question not found'], 404);
+        }
+        
+        $current_question = $subjectsQuestions[$current_question_index];
 
         // Broadcast the current question
         broadcast(new QuizEvent('options-revealed', $current_question, $lobby->question_num, $id, $lobby->current_level));
@@ -212,18 +227,38 @@ class LobbyController extends Controller
         // Fetch the lobby again to get the updated model
         $lobby = Lobby::findOrFail($id);
 
-        // Load questions
-
+        // Load questions - match the query pattern from questionnaire route
         $questions = Subjects::with(['subjectsQuestions' => function ($query) use ($lobby) {
-            $query->where('difficulty', $lobby->current_level)
-                ->where("archive", 0);
+            $query->where('difficulty', $lobby->current_level);
         }])
             ->where('id', $subject_id)
             ->firstOrFail();
 
-        // Use question_num to get current question (1-based index -> 0-based array)
+        // Get the questions collection
+        $subjectsQuestions = $questions->subjectsQuestions;
+        
+        if ($subjectsQuestions->isEmpty()) {
+            return response()->json([
+                'error' => 'No questions found',
+                'details' => [
+                    'subject_id' => $subject_id,
+                    'current_level' => $lobby->current_level,
+                    'question_num' => $lobby->question_num,
+                    'total_questions' => 0
+                ]
+            ], 404);
+        }
+        
+        // Try to get question at question_num index, fallback to first question if out of bounds
+        // This matches the pattern used in questionnaire route and other methods
         $current_question_index = $lobby->question_num - 1;
-        $current_question = $questions->subjectsQuestions[0] ?? $questions->subjectsQuestions[0];
+        
+        if ($current_question_index >= 0 && $current_question_index < $subjectsQuestions->count()) {
+            $current_question = $subjectsQuestions[$current_question_index];
+        } else {
+            // Fallback to first question if index is out of bounds (matches questionnaire route behavior)
+            $current_question = $subjectsQuestions[0];
+        }
 
         // Broadcast the current question
         broadcast(new QuizEvent('answer-revealed', $current_question, $lobby->question_num, $id, $lobby->current_level));
@@ -241,15 +276,21 @@ class LobbyController extends Controller
         // Load questions
 
         $questions = Subjects::with(['subjectsQuestions' => function ($query) use ($lobby) {
-            $query->where('difficulty', $lobby->current_level)
-                ->where("archive", 0);
+            $query->where('difficulty', $lobby->current_level);
         }])
             ->where('id', $subject_id)
             ->firstOrFail();
 
         // Use question_num to get current question (1-based index -> 0-based array)
         $current_question_index = $lobby->question_num - 1;
-        $current_question = $questions->subjectsQuestions[0] ?? null;
+        
+        // Get the questions collection and safely access the current question
+        $subjectsQuestions = $questions->subjectsQuestions;
+        $current_question = null;
+        
+        if (!$subjectsQuestions->isEmpty() && $current_question_index >= 0 && $current_question_index < $subjectsQuestions->count()) {
+            $current_question = $subjectsQuestions[$current_question_index];
+        }
 
         // Broadcast the current question
 
@@ -333,7 +374,9 @@ class LobbyController extends Controller
 
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255',
-            'code' => 'required|string|max:255',
+            'code' => 'required|string|max:255|unique:lobby,lobby_code',
+        ], [
+            'code.unique' => 'This lobby code is already in use. Please choose a different code.',
         ]);
 
         if ($validator->fails()) {
@@ -342,14 +385,40 @@ class LobbyController extends Controller
             ], 422);
         }
 
-             // Convert to proper format for MySQL
-        $startDate = Carbon::parse($request->input('date'))->format('Y-m-d H:i:s');
-        $lobby = Lobby::create([
-            'name' => $request->input('name'),
-            'lobby_code' => $request->input('code'),
-            'start_date' => $startDate,
-            'user_id' => Auth::user()->id
-        ]);
+        // Check if lobby code already exists (additional safety check)
+        $existingLobby = Lobby::where('lobby_code', $request->input('code'))->first();
+        if ($existingLobby) {
+            return response()->json([
+                'errors' => [
+                    'code' => ['This lobby code is already in use by another organizer. Please choose a different code.']
+                ],
+            ], 422);
+        }
+
+        // Convert to proper format for MySQL while keeping the organizer's timezone
+        $startDateInput = $request->input('date');
+        $startDate = Carbon::parse($startDateInput, config('app.timezone'))
+            ->setTimezone(config('app.timezone'))
+            ->format('Y-m-d H:i:s');
+        
+        try {
+            $lobby = Lobby::create([
+                'name' => $request->input('name'),
+                'lobby_code' => $request->input('code'),
+                'start_date' => $startDate,
+                'user_id' => Auth::user()->id
+            ]);
+        } catch (\Illuminate\Database\QueryException $e) {
+            // Handle unique constraint violation
+            if ($e->getCode() === '23000') {
+                return response()->json([
+                    'errors' => [
+                        'code' => ['This lobby code is already in use. Please choose a different code.']
+                    ],
+                ], 422);
+            }
+            throw $e;
+        }
 
         LoobyManagement::create([
             "user_id" => Auth::id(),
@@ -360,6 +429,61 @@ class LobbyController extends Controller
         return Inertia::render('OrganizerLobby', [
             'lobby' => Lobby::where("user_id", Auth::user()->id)->where("archive", 0)->get()
         ]);
+    }
+
+    public function quickCreate(Request $request)
+    {
+        // Auto-generate lobby code
+        do {
+            $lobbyCode = mt_rand(100000, 999999);
+        } while (Lobby::where('lobby_code', $lobbyCode)->exists());
+
+        // Create lobby with default name
+        $lobbyName = $request->input('name', 'New Quiz ' . date('Y-m-d H:i'));
+        
+        try {
+            $lobby = Lobby::create([
+                'name' => $lobbyName,
+                'lobby_code' => (string)$lobbyCode,
+                'start_date' => now(),
+                'user_id' => Auth::id(),
+            ]);
+
+            LoobyManagement::create([
+                "user_id" => Auth::id(),
+                "lobby_id" => $lobby->id,
+                "action" => 0
+            ]);
+
+            // Automatically create a default subject
+            $subject = Subjects::create([
+                'subject_name' => 'Main Quiz',
+                'lobby_id' => $lobby->id,
+                'quiz_title' => $lobbyName,
+                'start_date' => now(),
+            ]);
+
+            // Return the subject_id so frontend can redirect
+            return response()->json([
+                'success' => true,
+                'message' => 'Quiz created successfully',
+                'lobby' => [
+                    'id' => $lobby->id,
+                    'name' => $lobby->name,
+                    'lobby_code' => $lobby->lobby_code,
+                ],
+                'subject' => [
+                    'id' => $subject->id,
+                    'name' => $subject->subject_name,
+                ]
+            ], 201);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to create quiz: ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
     /**
@@ -383,14 +507,49 @@ class LobbyController extends Controller
      */
     public function update(Request $request, string $id)
     {
-
-        //
+        // Verify the lobby belongs to the current user
         $lobby = Lobby::findOrFail($id);
+        
+        if ($lobby->user_id !== Auth::id()) {
+            abort(403, 'You are not authorized to update this lobby.');
+        }
 
-        $lobby->name = $request->name;
-        $lobby->lobby_code = $request->code;
+        // Validate with unique check (excluding current lobby)
+        $validator = Validator::make($request->all(), [
+            'name' => 'required|string|max:255',
+            'code' => 'required|string|max:255|unique:lobby,lobby_code,' . $id,
+        ], [
+            'code.unique' => 'This lobby code is already in use. Please choose a different code.',
+        ]);
 
-        $lobby->save();
+        if ($validator->fails()) {
+            return back()->withErrors($validator->errors());
+        }
+
+        // Additional check for existing lobby code
+        $existingLobby = Lobby::where('lobby_code', $request->code)
+            ->where('id', '!=', $id)
+            ->first();
+            
+        if ($existingLobby) {
+            return back()->withErrors([
+                'code' => 'This lobby code is already in use by another organizer. Please choose a different code.'
+            ]);
+        }
+
+        try {
+            $lobby->name = $request->name;
+            $lobby->lobby_code = $request->code;
+            $lobby->save();
+        } catch (\Illuminate\Database\QueryException $e) {
+            // Handle unique constraint violation
+            if ($e->getCode() === '23000') {
+                return back()->withErrors([
+                    'code' => 'This lobby code is already in use. Please choose a different code.'
+                ]);
+            }
+            throw $e;
+        }
 
         LoobyManagement::create([
             "user_id" => Auth::id(),

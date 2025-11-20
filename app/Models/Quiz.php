@@ -9,7 +9,6 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Quiz extends Model
 {
     use HasFactory;
-   protected $connection = 'sqlite';
     /**
      * The attributes that are mass assignable.
      *
@@ -19,7 +18,9 @@ class Quiz extends Model
         'title',
         'user_id',
         'code',
-        'status'
+        'status',
+        'class_room_id',
+        'is_class_mode'
     ];
 
     /**
@@ -36,5 +37,13 @@ class Quiz extends Model
     public function user()
     {
         return $this->belongsTo(User::class);
+    }
+
+    /**
+     * Get the class room this quiz belongs to (if in class mode)
+     */
+    public function classRoom()
+    {
+        return $this->belongsTo(ClassRoom::class, 'class_room_id');
     }
 }

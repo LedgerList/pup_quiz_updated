@@ -10,7 +10,6 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class LiveSession extends Model
 {
     use HasFactory;
-   protected $connection = 'sqlite';
     protected $fillable = [
         'quiz_id',
         'current_question_index',

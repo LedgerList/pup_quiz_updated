@@ -38,9 +38,16 @@ class StudentRegistrationController extends Controller
             'role' => 2, // 2 = student
         ]);
 
+        // Return sanitized user data - exclude sensitive information
         return response()->json([
             'message' => 'Student registered successfully',
-            'user' => $user,
+            'user' => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'username' => $user->username,
+                'role' => $user->role,
+                // Exclude sensitive fields: email, student_number, password, etc.
+            ],
         ], 201);
     }
 }

@@ -26,7 +26,8 @@ const Form = (props: Props) => {
 
   const [passwordStrength, setPasswordStrength] = useState<PasswordStrength | null>(null);
   const [showPasswordError, setShowPasswordError] = useState(false);
-  const [showPassword, setShowPassword] = useState<boolean>(false)
+  const [showPassword, setShowPassword] = useState<boolean>(false);
+  
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
 
@@ -211,15 +212,40 @@ const Form = (props: Props) => {
   const steps = [
     {
       fields: [
-        { name: "fullName", label: "Full Name", type: "text" },
-        { name: "department", label: "Department", type: "text" },
+        {
+          name: "fullName",
+          label: "Full Name",
+          type: "text",
+          placeholder: "Last Name, First Name M.I",
+        },
+        {
+          name: "department",
+          label: "Department",
+          type: "text",
+          placeholder: "College of Engineering",
+        },
       ],
     },
     {
       fields: [
-        { name: "username", label: "Username", type: "text" },
-        { name: "email", label: "Email", type: "email" },
-        { name: "password", label: "Password", type: "password" },
+        {
+          name: "username",
+          label: "Username",
+          type: "text",
+          placeholder: "Preferred username",
+        },
+        {
+          name: "email",
+          label: "Email",
+          type: "email",
+          placeholder: "name@example.com",
+        },
+        {
+          name: "password",
+          label: "Password",
+          type: "password",
+          placeholder: "Use 12+ characters with symbols",
+        },
       ],
     },
   ];
@@ -282,7 +308,7 @@ const Form = (props: Props) => {
         formData
       );
 
-      showToast("success", "Registration successful!");
+      showToast("success", "Registration successful! Please login to continue.");
       setTimeout(() => {
         window.location.href = "/login";
       }, 2000);
@@ -421,7 +447,6 @@ const Form = (props: Props) => {
                 >
                   {field.label}
                 </label>
-
                 <div className="relative">
                   <input
                     type={field.type === "password" && showPassword ? "text" : field.type}
@@ -430,7 +455,7 @@ const Form = (props: Props) => {
                     value={formData[field.name as keyof typeof formData]}
                     onChange={handleChange}
                     className="w-full border-0 border-b border-red-500 pb-2 text-lg focus:ring-0 focus:outline-none focus:border-b-2 bg-transparent pr-10"
-                    placeholder=" "
+                    placeholder={field.placeholder ?? " "}
                   />
 
                   {/* 👁️ Password toggle button */}

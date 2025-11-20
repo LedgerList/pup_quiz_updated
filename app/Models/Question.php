@@ -10,7 +10,6 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Question extends Model
 {
     use HasFactory;
-    protected $connection = 'sqlite';
     /**
      * The attributes that are mass assignable.
      *

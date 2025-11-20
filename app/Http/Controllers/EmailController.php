@@ -32,6 +32,11 @@ class EmailController extends Controller
         }
 
         $otpLogin = LoginOtp::where("email", $request->email)->first();
+        
+        if (!$otpLogin) {
+            return response()->json(['error' => 'OTP not found. Please request a new one.'], 404);
+        }
+        
         // Check expiration
         if (now()->greaterThan($otpLogin->otp_expires_at)) {
             return response()->json(['error' => 'OTP expired'], 400);
@@ -39,16 +44,30 @@ class EmailController extends Controller
 
         // Check code
         if ($request->otp !== $otpLogin->otp) {
-
             return response()->json(['error' => 'Invalid OTP'], 400);
         }
 
+        // Delete the OTP after successful verification
         $lOtp = LoginOtp::where('email', $request->email)->firstOrFail();
         $lOtp->delete();
 
-        // Log the user in
+        // Create LoginLogs entry to mark that user has completed first login verification
+        $login_log = LoginLogs::where("email", $request->email)->first();
+        if (!$login_log) {
+            LoginLogs::create([
+                "user_id" => $user->id,
+                "email" => $request->email,
+            ]);
+        }
+
+        // Log the user in after successful OTP verification
         Auth::login($user);
-        return response()->json(['success' => 'Logged In Successfully'], 200);
+        $request->session()->regenerate();
+        session(['role' => $user->role]);
+
+        return response()->json([
+            'success' => 'OTP verified successfully. Redirecting to dashboard...'
+        ], 200);
     }
 
     public function resendOTP(Request $request)
@@ -118,14 +137,12 @@ class EmailController extends Controller
         }
         try {
             $otp = rand(100000, 999999);
-            $login_log = LoginLogs::where("emaiil", $request->email)->first();
+            $login_log = LoginLogs::where("email", $request->email)->first();
 
             if (!$login_log) {
                 LoginLogs::create([
-                    "user_id" =>  $user->id,
-
-                    "emaiil" => $request->email,
-
+                    "user_id" => $user->id,
+                    "email" => $request->email,
                 ]);
             }
 
@@ -142,11 +159,12 @@ class EmailController extends Controller
             $body = "Your OTP code is "  . $otp . ". It expires in 5 minutes.";
 
             Mail::to($email)->send(new OtpMail($name, $email, $subject, $body));
+
+            return back()->with('success', 'OTP sent successfully! Please check your email.');
         } catch (Exception $e) {
-            return response()->json([
-                "msg" => "Failed to send OTP email",
-                "error" => $e->getMessage()  // will show the actual error message
-            ], 500);
+            return back()->withErrors([
+                'email' => 'Failed to send OTP email: ' . $e->getMessage()
+            ]);
         }
 
         // // Success
@@ -156,5 +174,50 @@ class EmailController extends Controller
         // ]);
 
         // return "OTP Email Sent!";
+    }
+
+    public function sendRegistrationOtp(Request $request)
+    {
+        $request->validate([
+            'email' => 'required|email',
+        ]);
+
+        $user = User::where("email", $request->email)->first();
+
+        if (!$user) {
+            return response()->json([
+                "error" => "User not found"
+            ], 404);
+        }
+
+        // Delete any existing OTP for this email
+        $lOtp = LoginOtp::where('email', $request->email)->first();
+        if ($lOtp) {
+            $lOtp->delete();
+        }
+
+        try {
+            $otp = rand(100000, 999999);
+
+            LoginOtp::create([
+                "otp" => $otp,
+                "code" => "",
+                "email" => $request->email,
+                "otp_expires_at" => now()->addMinutes(5)
+            ]);
+
+            $name = $user->name;
+            $email = $request->email;
+            $subject = "Email Verification - Your OTP Code";
+            $body = "Thank you for registering! Your OTP code is " . $otp . ". It expires in 5 minutes.";
+
+            Mail::to($email)->send(new OtpMail($name, $email, $subject, $body));
+
+            return response()->json(['success' => 'OTP sent successfully'], 200);
+        } catch (Exception $e) {
+            return response()->json([
+                "error" => "Failed to send OTP email: " . $e->getMessage()
+            ], 500);
+        }
     }
 }
